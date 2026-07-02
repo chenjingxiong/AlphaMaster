@@ -1,12 +1,12 @@
 """
-单元测试：10 个新增时序算子（TS_MEAN / TS_STD / TS_RANK / TS_CORR_10）
+单元测试：时序算子（TS_MEAN / TS_STD / TS_RANK / TS_CORR_10）及新增趋势算子
 
 验证：
 - 输出形状均为 [N, T]
 - TS_RANK_5/10/20 值域 ∈ [0, 1)
 - TS_CORR_10 在常数输入时输出 0
 - 所有算子对边界值（全零、极大值 1e8）无 NaN / Inf
-- len(OPS_CONFIG) == 22
+- len(OPS_CONFIG) == 28（原 22 + 新增 6 个趋势/动量算子）
 
 需求：F2.1~F2.6
 """
@@ -20,10 +20,10 @@ import torch
 from model_core.ops import OPS_CONFIG, _ts_mean, _ts_std, _ts_rank, _ts_corr_10
 
 # ── 常量 ────────────────────────────────────────────────────────────────────────
-N, T = 4, 30  # 测试矩阵尺寸
+N, T = 4, 30
 
-# 从 OPS_CONFIG 中提取 10 个新算子（索引 12~21）
-TS_OPS = OPS_CONFIG[12:]  # name, fn, arity
+# 原始 10 个时序算子（索引 12~21），不含新增的趋势算子
+TS_OPS = OPS_CONFIG[12:22]
 
 
 # ── 辅助：随机正态输入 ───────────────────────────────────────────────────────────
@@ -35,13 +35,13 @@ def rand_input() -> torch.Tensor:
 # ── 1. OPS_CONFIG 长度验证 ───────────────────────────────────────────────────────
 class TestOpsConfigLength:
     def test_ops_config_length_equals_22(self):
-        """验证 OPS_CONFIG 共 22 个算子（原 12 + 新增 10）"""
-        assert len(OPS_CONFIG) == 22, (
-            f"OPS_CONFIG 长度应为 22，实际为 {len(OPS_CONFIG)}"
+        """OPS_CONFIG 共 28 个算子（原 12 基础 + 10 时序 + 6 趋势/动量）"""
+        assert len(OPS_CONFIG) == 28, (
+            f"OPS_CONFIG 长度应为 28，实际为 {len(OPS_CONFIG)}"
         )
 
     def test_new_ops_count_equals_10(self):
-        """末尾 10 个算子均为新增时序算子"""
+        """时序算子（索引 12-21）共 10 个"""
         assert len(TS_OPS) == 10
 
     def test_ts_op_names(self):

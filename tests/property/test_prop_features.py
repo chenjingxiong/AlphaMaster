@@ -93,9 +93,9 @@ def test_compute_features_shape_and_nan_free(N: int, T: int):
     raw_dict = _make_ohlcv(N, T)
     out = MT5FeatureEngineer.compute_features(raw_dict)
 
-    # Shape invariant
-    assert out.shape == (N, 10, T), (
-        f"Expected shape ({N}, 10, {T}), got {tuple(out.shape)}"
+    # Shape invariant: 20 features (expanded from 10)
+    assert out.shape == (N, 20, T), (
+        f"Expected shape ({N}, 20, {T}), got {tuple(out.shape)}"
     )
 
     # NaN safety
@@ -133,8 +133,8 @@ def test_pressure_and_ac1_in_range(N: int, T: int):
     raw_dict = _make_ohlcv(N, T)
     out = MT5FeatureEngineer.compute_features(raw_dict)
 
-    pressure = out[:, 3, :]   # PRESSURE — index 3
-    ac1      = out[:, 9, :]   # AC1      — index 9
+    pressure = out[:, 12, :]  # PRESSURE — index 12 in 20-feature vocab
+    ac1      = out[:, 13, :]  # AC1      — index 13 in 20-feature vocab
 
     # PRESSURE ∈ [-1.0, 1.0]
     assert (pressure >= -1.0).all(), (

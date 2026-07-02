@@ -2,15 +2,19 @@
 tests/unit/test_data_manager.py — MT5DataManager 单元测试
 
 验证需求：
-  - Req 3.5: 少于 100 bars 的品种应被排除并记录 WARNING
-             （WHEN a symbol has fewer than 100 bars of data,
-              THE MT5_Data_Manager SHALL exclude that symbol and log a warning）
+  - Req 3.5: 少于 MIN_BARS 的品种应被排除并记录 WARNING
+
+注意：测试使用较小的数据量（100/2000 bars），需同时 patch Config.MIN_BARS=100
+以避免受全局配置（3000）影响。
 """
 
 import pytest
 import pandas as pd
 import numpy as np
 from unittest.mock import MagicMock, patch
+
+# 测试用的 MIN_BARS 值（与测试数据大小匹配）
+_TEST_MIN_BARS = 100
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────────────────────
@@ -77,7 +81,7 @@ class TestSymbolExcludedWhenBelowMinBars:
 
         manager = MT5DataManager(mock_fetcher)
 
-        with patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
+        with patch.object(Config, "MIN_BARS", _TEST_MIN_BARS), patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
             manager.load()
 
         assert "US500"  not in manager.symbols, "US500 应因 bars < 100 被排除"
@@ -98,7 +102,7 @@ class TestSymbolExcludedWhenBelowMinBars:
 
         manager = MT5DataManager(mock_fetcher)
 
-        with patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
+        with patch.object(Config, "MIN_BARS", _TEST_MIN_BARS), patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
             manager.load()
 
         # fetch 应被调用 3 次（每个品种一次）
@@ -118,7 +122,7 @@ class TestSymbolExcludedWhenBelowMinBars:
 
         manager = MT5DataManager(mock_fetcher)
 
-        with patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
+        with patch.object(Config, "MIN_BARS", _TEST_MIN_BARS), patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
             manager.load()
 
         assert len(manager.symbols) == 2
@@ -143,7 +147,7 @@ class TestAllSymbolsBelowMinBarsRaisesError:
 
         manager = MT5DataManager(mock_fetcher)
 
-        with patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
+        with patch.object(Config, "MIN_BARS", _TEST_MIN_BARS), patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
             with pytest.raises(ValueError) as exc_info:
                 manager.load()
 
@@ -168,7 +172,7 @@ class TestAllSymbolsBelowMinBarsRaisesError:
 
         manager = MT5DataManager(mock_fetcher)
 
-        with patch.object(Config, "SYMBOLS", ["XAUUSD", "EURUSD"]):
+        with patch.object(Config, "MIN_BARS", _TEST_MIN_BARS), patch.object(Config, "SYMBOLS", ["XAUUSD", "EURUSD"]):
             with pytest.raises(ValueError):
                 manager.load()
 
@@ -191,7 +195,7 @@ class TestExactlyMinBarsIsAccepted:
 
         manager = MT5DataManager(mock_fetcher)
 
-        with patch.object(Config, "SYMBOLS", ["XAUUSD", "EURUSD"]):
+        with patch.object(Config, "MIN_BARS", _TEST_MIN_BARS), patch.object(Config, "SYMBOLS", ["XAUUSD", "EURUSD"]):
             manager.load()
 
         assert "XAUUSD" in manager.symbols, \
@@ -212,7 +216,7 @@ class TestExactlyMinBarsIsAccepted:
 
         manager = MT5DataManager(mock_fetcher)
 
-        with patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
+        with patch.object(Config, "MIN_BARS", _TEST_MIN_BARS), patch.object(Config, "SYMBOLS", ["XAUUSD", "US500", "EURUSD"]):
             manager.load()
 
         assert "XAUUSD" not in manager.symbols, "99 bars 应被排除"

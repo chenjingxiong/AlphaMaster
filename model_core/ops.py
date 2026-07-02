@@ -13,28 +13,34 @@ def _op_gate(condition: torch.Tensor, x: torch.Tensor, y: torch.Tensor) -> torch
 
 @torch.jit.script
 def _op_jump(x: torch.Tensor) -> torch.Tensor:
+    """降低稀疏度：阈值从 3σ 改为 1.5σ，让更多时间步有非零输出"""
     mean = x.mean(dim=1, keepdim=True)
     std = x.std(dim=1, keepdim=True) + 1e-6
     z = (x - mean) / std
-    return torch.relu(z - 3.0)
+    return torch.tanh(z - 1.5)   # tanh 软化，不再产生全零区间
 
 @torch.jit.script
 def _op_decay(x: torch.Tensor) -> torch.Tensor:
     return x + 0.8 * _ts_delay(x, 1) + 0.6 * _ts_delay(x, 2)
 
+@torch.jit.script
+def _op_wma(x: torch.Tensor) -> torch.Tensor:
+    """加权移动平均（权重 3,2,1），平滑信号，减少剥头皮"""
+    return (3.0 * x + 2.0 * _ts_delay(x, 1) + 1.0 * _ts_delay(x, 2)) / 6.0
+
 OPS_CONFIG = [
-    ('ADD', lambda x, y: x + y, 2),
-    ('SUB', lambda x, y: x - y, 2),
-    ('MUL', lambda x, y: x * y, 2),
-    ('DIV', lambda x, y: x / (y + 1e-6), 2),
-    ('NEG', lambda x: -x, 1),
-    ('ABS', torch.abs, 1),
-    ('SIGN', torch.sign, 1),
-    ('GATE', _op_gate, 3),
-    ('JUMP', _op_jump, 1),
-    ('DECAY', _op_decay, 1),
+    ('ADD',    lambda x, y: x + y,        2),
+    ('SUB',    lambda x, y: x - y,        2),
+    ('MUL',    lambda x, y: x * y,        2),
+    ('DIV',    lambda x, y: x / (y + 1e-6), 2),
+    ('NEG',    lambda x: -x,              1),
+    ('ABS',    torch.abs,                  1),
+    ('SIGN',   torch.sign,                 1),
+    ('GATE',   _op_gate,                   3),
+    ('JUMP',   _op_jump,                   1),   # 已降低稀疏度
+    ('DECAY',  _op_decay,                  1),
     ('DELAY1', lambda x: _ts_delay(x, 1), 1),
-    ('MAX3', lambda x: torch.max(x, torch.max(_ts_delay(x,1), _ts_delay(x,2))), 1)
+    ('MAX3',   lambda x: torch.max(x, torch.max(_ts_delay(x,1), _ts_delay(x,2))), 1),
 ]
 
 # ── 时序滑动窗口辅助函数（不使用 @torch.jit.script，lambda 不兼容 JIT）──────
@@ -86,7 +92,7 @@ def _ts_corr_10(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return torch.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-# ── 追加 10 个时序算子到 OPS_CONFIG（token id 从 feat_offset+12 开始）────────
+# ── 追加时序算子到 OPS_CONFIG（token id 从 feat_offset+12 开始）────────────
 
 OPS_CONFIG += [
     ('TS_MEAN_5',  lambda x: _ts_mean(x, 5),  1),
@@ -99,6 +105,19 @@ OPS_CONFIG += [
     ('TS_RANK_10', lambda x: _ts_rank(x, 10), 1),
     ('TS_RANK_20', lambda x: _ts_rank(x, 20), 1),
     ('TS_CORR_10', _ts_corr_10,                2),
+    # ── 趋势 / 动量类算子（新增，token id = feat_offset+22~27）────────────
+    # MOMENTUM_5: 短期均线 - 长期均线，捕捉趋势方向
+    ('MOMENTUM_5',  lambda x: _ts_mean(x, 5)  - _ts_mean(x, 20), 1),
+    # MOMENTUM_10: 中期动量
+    ('MOMENTUM_10', lambda x: _ts_mean(x, 10) - _ts_mean(x, 20), 1),
+    # TS_MAX_10: 10周期最大值，捕捉强势突破
+    ('TS_MAX_10',   lambda x: _ts_rolling(x, 10).max(dim=-1).values, 1),
+    # TS_MIN_10: 10周期最小值，捕捉弱势突破
+    ('TS_MIN_10',   lambda x: _ts_rolling(x, 10).min(dim=-1).values, 1),
+    # WMA: 加权移动平均，平滑信号
+    ('WMA',         _op_wma,  1),
+    # DELAY4: 延迟4根bar，构建中期动量差
+    ('DELAY4',      lambda x: _ts_delay(x, 4), 1),
 ]
 
-assert len(OPS_CONFIG) == 22, f"OPS_CONFIG 长度应为 22，实际为 {len(OPS_CONFIG)}"
+assert len(OPS_CONFIG) == 28, f"OPS_CONFIG 长度应为 28，实际为 {len(OPS_CONFIG)}"

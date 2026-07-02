@@ -80,9 +80,24 @@ class MT5StrategyRunner:
             sys.exit(1)
 
         if isinstance(data, list):
-            self.formula: list[int] = [int(t) for t in data]
+            logger.critical(
+                "[Runner] Legacy strategy format (plain list) is not supported "
+                "after vocab v2.0. Feature order has changed from 10 to 20 dims. "
+                "Please retrain with the current feature set (python main.py)."
+            )
+            sys.exit(1)
         elif isinstance(data, dict) and "formula" in data:
             self.formula = [int(t) for t in data["formula"]]
+            # vocab_version 校验：不一致则拒绝启动，防止特征语义错位
+            from model_core.vocab import VOCAB_VERSION as _CURRENT_VER
+            strategy_ver = data.get("vocab_version", "unknown")
+            if strategy_ver != _CURRENT_VER:
+                logger.critical(
+                    f"[Runner] vocab_version mismatch: "
+                    f"strategy={strategy_ver}, current={_CURRENT_VER}. "
+                    f"Please retrain with the current feature set."
+                )
+                sys.exit(1)
         else:
             logger.critical(f"Unexpected strategy format in '{strategy_path}'.")
             sys.exit(1)
@@ -237,8 +252,10 @@ class MT5StrategyRunner:
     def _compute_targets(self) -> torch.Tensor | None:
         """运行 StackVM 并返回各品种目标仓位 {-1, 0, +1}，形状 [N]。
 
-        SIGNAL_MODE="backtest_parity": tanh→sign（严格对标回测）
-        SIGNAL_MODE="threshold":       sigmoid+阈值（旧逻辑，保留兼容）
+        实盘使用 stateful neutral band：传入当前持仓方向，
+        中间区 [EXIT_THRESHOLD, ENTRY_THRESHOLD] 保持前仓（滞后出场）。
+        这与回测（stateless，中间区直接空仓）有微小差异：
+        回测保守，实盘稍宽松，是有意设计的安全边际。
         """
         if self._data_manager is None:
             return None
@@ -249,14 +266,19 @@ class MT5StrategyRunner:
                 logger.error("[Runner] StackVM returned None.")
                 return None
 
-            # 用最新已收盘 bar（最后一列），对应回测 position[t] 的时刻
-            latest = raw[:, -1]   # [N]
+            latest = raw[:, -1]   # [N]，最新 bar 的因子值
 
             if Config.SIGNAL_MODE == "backtest_parity":
-                targets = compute_target_positions(latest)   # tanh→sign
+                # 组装当前持仓方向 tensor，用于 neutral band 滞后出场
+                symbols = self._data_manager.symbols
+                prev_dirs = torch.zeros(len(symbols), dtype=torch.float32)
+                for i, sym in enumerate(symbols):
+                    prev_dirs[i] = float(self.portfolio.get_direction(sym))
+
+                targets = compute_target_positions(latest, prev_positions=prev_dirs)
             else:
                 # threshold 模式（旧逻辑，仅做多）
-                scores = torch.sigmoid(latest)
+                scores  = torch.sigmoid(latest)
                 targets = torch.zeros(len(scores), dtype=torch.float32)
                 targets[scores > Config.BUY_THRESHOLD]  =  1.0
                 targets[scores < Config.SELL_THRESHOLD] = -1.0

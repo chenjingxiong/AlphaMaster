@@ -71,9 +71,8 @@ def position_strategy(draw, symbol: str) -> Position:
         entry_time=draw(time_strategy),
         lot_size=draw(lot_strategy),
         direction=draw(direction_strategy),
-        # highest_price must be >= entry_price is a realistic invariant,
-        # but the spec doesn't mandate it — we test all valid float combinations.
         highest_price=draw(price_strategy),
+        lowest_price=draw(price_strategy),   # required field added in portfolio refactor
         is_partial_closed=draw(st.booleans()),
     )
 

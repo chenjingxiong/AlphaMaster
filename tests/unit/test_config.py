@@ -16,7 +16,7 @@ from config import Config
 
 class TestConfigInputDim:
     def test_input_dim_equals_6(self):
-        assert Config.INPUT_DIM == 10
+        assert Config.INPUT_DIM == 20   # expanded from 10 to 20 features
 
     def test_input_dim_is_int(self):
         assert isinstance(Config.INPUT_DIM, int)
@@ -57,7 +57,7 @@ class TestConfigSymbols:
 
 class TestConfigDataParams:
     def test_min_bars_equals_100(self):
-        assert Config.MIN_BARS == 100
+        assert Config.MIN_BARS == 3000   # updated for 5-symbol portfolio
 
     def test_bars_count_equals_2000(self):
         assert Config.BARS_COUNT >= 100   # 只断言合理下界，不固定具体值

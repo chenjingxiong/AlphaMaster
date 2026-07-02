@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "id": "v1",
+    "name": "MA_RANK_VOL_TREND",
+    "saved_at": "2026-07-02",
+    "vocab_version": "2.0",
+    "training_steps": 620,
+    "best_score_at_step": 125,
+    "global_best_score": 1.1828,
+    "description": "短长均线差排名因子。有效核心为 TS_RANK_10(MA_DIFF)，GATE条件恒真（RVOL>0），实际等价于均线交叉的10期历史排名。对风险资产（指数、黄金）有较好的趋势追踪效果，对外汇效果偏弱。"
+  },
+  "formula": {
+    "tokens": [6, 44, 3, 39, 4, 29, 34, 27],
+    "readable": "RVOL -> TS_MAX_10 -> MA_DIFF -> TS_RANK_10 -> SLOPE20 -> DECAY -> TS_MEAN_20 -> GATE",
+    "effective_core": "TS_RANK_10(MA_DIFF)",
+    "formula_len": 8,
+    "structure_note": "GATE的第1个参数 TS_MAX_10(RVOL) 永远>0，条件恒真，实际只使用第2个分支 TS_RANK_10(MA_DIFF)。SLOPE20分支（第3个参数）从未激活。这是一个可以简化的冗余结构。"
+  },
+  "backtest": {
+    "period": "2024-07 ~ 2026-07",
+    "timeframe": "H1",
+    "symbols": ["EURUSDm", "USDJPYm", "XAUUSDm", "USTECm", "US500m"],
+    "total_bars": 11330,
+    "portfolio_total_pnl": 1.1879,
+    "per_symbol": [
+      {
+        "symbol": "USTECm",
+        "sortino": 2.50,
+        "total_pnl": 0.749,
+        "max_drawdown": 0.152,
+        "n_trades": 741,
+        "win_rate": 0.479,
+        "avg_hold_bars": 15.2,
+        "verdict": "STRONG - 趋势追踪效果最佳，回撤控制优秀"
+      },
+      {
+        "symbol": "XAUUSDm",
+        "sortino": 1.29,
+        "total_pnl": 0.384,
+        "max_drawdown": 0.313,
+        "n_trades": 710,
+        "win_rate": 0.410,
+        "avg_hold_bars": 15.9,
+        "verdict": "GOOD - 收益可观但回撤偏高（31%），单笔最大亏损8.8%需注意"
+      },
+      {
+        "symbol": "US500m",
+        "sortino": 0.85,
+        "total_pnl": 0.202,
+        "max_drawdown": 0.155,
+        "n_trades": 752,
+        "win_rate": 0.438,
+        "avg_hold_bars": 15.0,
+        "verdict": "OK - 正收益，回撤合理"
+      },
+      {
+        "symbol": "USDJPYm",
+        "sortino": -0.32,
+        "total_pnl": -0.044,
+        "max_drawdown": 0.168,
+        "n_trades": 735,
+        "win_rate": 0.429,
+        "avg_hold_bars": 15.3,
+        "verdict": "WEAK - 轻微亏损，外汇均线信号噪声偏大"
+      },
+      {
+        "symbol": "EURUSDm",
+        "sortino": -0.96,
+        "total_pnl": -0.103,
+        "max_drawdown": 0.153,
+        "n_trades": 743,
+        "win_rate": 0.398,
+        "avg_hold_bars": 15.2,
+        "verdict": "WEAK - 亏损，胜率仅39.8%，外汇趋势追踪效果差"
+      }
+    ],
+    "summary": {
+      "positive_symbols": 3,
+      "total_symbols": 5,
+      "trades_per_day": 1.6,
+      "avg_hold_hours": 15.3,
+      "symbol_consistency": "PASS (3/5 >= 60%)"
+    }
+  },
+  "training_config": {
+    "phase": "A",
+    "max_formula_len": 8,
+    "train_steps": 300,
+    "batch_size": 128,
+    "elite_replay_frac": 0.25,
+    "features": 20,
+    "symbols": ["EURUSDm", "USDJPYm", "XAUUSDm", "USTECm", "US500m"],
+    "timeframe": "H1",
+    "bars_count": 12000,
+    "neutral_band_entry": 0.3,
+    "neutral_band_exit": 0.1
+  },
+  "next_steps": [
+    "切换阶段B：MAX_FORMULA_LEN=14，TRAIN_STEPS=500，ELITE_REPLAY_FRAC=0.35",
+    "在当前公式族（均线排名+波动率+斜率）附近做更深度搜索",
+    "目标：改善EURUSDm和USDJPYm的信号质量，达到5/5品种正收益",
+    "考虑为外汇品种增加反转类特征（RSI、AC1）的权重"
+  ]
+}

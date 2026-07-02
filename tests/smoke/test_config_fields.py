@@ -46,8 +46,8 @@ def _is_mt5_feature_names_updated():
 
 class TestConfigInputDimSmoke:
     def test_input_dim_equals_10(self):
-        """Config.INPUT_DIM 必须等于 10（与 MT5FeatureEngineer 输出维度一致，已扩展至10个特征）"""
-        assert Config.INPUT_DIM == 10
+        """Config.INPUT_DIM must equal 20 (expanded from 10 to 20 features)."""
+        assert Config.INPUT_DIM == 20
 
 
 class TestFeatureNamesSmoke:
@@ -95,7 +95,7 @@ class TestFeatureNamesSmoke:
         )
 
     def test_feature_names_length_matches_input_dim(self):
-        """FEATURE_NAMES 的长度应等于 Config.INPUT_DIM（6）"""
+        """FEATURE_NAMES 的长度应等于 Config.INPUT_DIM（20）"""
         feature_names = _get_feature_names()
         if feature_names is None:
             pytest.skip("model_core.vocab.FEATURE_NAMES not available yet (pending task 5.1)")

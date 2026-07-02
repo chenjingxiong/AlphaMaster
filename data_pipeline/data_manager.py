@@ -198,40 +198,63 @@ class MT5DataManager:
     def _align_timelines(
         self, raw_dfs: dict[str, pd.DataFrame]
     ) -> dict[str, pd.DataFrame]:
-        """将多品种 DataFrame 对齐到统一时间轴（时间戳并集 + forward-fill）。
+        """将多品种 DataFrame 对齐到统一时间轴（时间戳交集）。
+
+        使用交集而非并集：只保留所有品种都有真实报价的时间戳，
+        彻底消除因休市 forward-fill 导致的"重复K线"问题。
 
         Args:
             raw_dfs: 品种名 → DataFrame（含 time 列，以及 OHLCV 列）的字典。
 
         Returns:
             品种名 → 对齐后 DataFrame（以 time 为索引，含 open/high/low/close/volume 列）。
-            所有品种的行数相同，缺失值用 forward-fill 填充，
-            仍有 NaN（序列开头）的位置用 backward-fill 补充。
+            所有品种行数完全相同，无任何 NaN（交集保证每个时间戳各品种均有真实数据）。
         """
         fields = ["open", "high", "low", "close", "volume"]
 
-        # 为每个品种建立以 time 为索引的 Series dict
+        # 为每个品种建立以 time 为索引的 DataFrame
         indexed: dict[str, pd.DataFrame] = {}
         for symbol, df in raw_dfs.items():
-            # 使用 tick_volume 映射为 volume
             volume_col = "tick_volume" if "tick_volume" in df.columns else "volume"
             sub = df[["time", "open", "high", "low", "close", volume_col]].copy()
             sub = sub.rename(columns={volume_col: "volume"})
             sub = sub.set_index("time")
+            # 去掉同一时间戳重复的行（取最后一条）
+            sub = sub[~sub.index.duplicated(keep="last")]
             indexed[symbol] = sub
 
-        # 构建时间戳并集索引
-        union_index: pd.Index = pd.Index([], dtype="int64")
+        # 构建时间戳交集索引：只保留所有品种都有报价的 bar
+        inter_index: pd.Index = next(iter(indexed.values())).index
         for sub in indexed.values():
-            union_index = union_index.union(sub.index)
-        union_index = union_index.sort_values()
+            inter_index = inter_index.intersection(sub.index)
+        inter_index = inter_index.sort_values()
 
-        # 重新索引并 forward-fill，再 backward-fill 处理序列开头的 NaN
-        aligned: dict[str, pd.DataFrame] = {}
+        if len(inter_index) < Config.MIN_BARS:
+            # 交集太小时降级回并集+ffill，并记录警告
+            logger.warning(
+                f"Intersection timeline has only {len(inter_index)} bars "
+                f"(< MIN_BARS={Config.MIN_BARS}). Falling back to union+ffill."
+            )
+            union_index: pd.Index = pd.Index([], dtype="int64")
+            for sub in indexed.values():
+                union_index = union_index.union(sub.index)
+            union_index = union_index.sort_values()
+            aligned: dict[str, pd.DataFrame] = {}
+            for symbol, sub in indexed.items():
+                reindexed = sub.reindex(union_index)
+                reindexed = reindexed.ffill().bfill()
+                aligned[symbol] = reindexed[fields]
+            return aligned
+
+        logger.info(
+            f"Intersection timeline: {len(inter_index)} bars "
+            f"(from union of {sum(len(s) for s in indexed.values())} total)"
+        )
+
+        # 用交集索引直接切片，无需 ffill
+        aligned = {}
         for symbol, sub in indexed.items():
-            reindexed = sub.reindex(union_index)
-            reindexed = reindexed.ffill().bfill()
-            aligned[symbol] = reindexed[fields]
+            aligned[symbol] = sub.reindex(inter_index)[fields]
 
         return aligned
 

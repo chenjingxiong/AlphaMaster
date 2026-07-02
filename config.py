@@ -42,19 +42,20 @@ class Config:
     MT5_SERVER   = os.getenv("MT5_SERVER", "")
 
     # ── 品种与周期 ────────────────────────────────────────
-    SYMBOLS   = ["XAUUSDm", "US500m", "EURUSDm"]
+    SYMBOLS   = ["EURUSDm", "USDJPYm", "XAUUSDm", "USTECm", "US500m"]
     TIMEFRAME = mt5.TIMEFRAME_H1   # 可通过 get_timeframe() 修改
 
     # ── 数据参数 ──────────────────────────────────────────
-    BARS_COUNT            = 9000   # 每品种拉取的历史 K 线数
-    MIN_BARS              = 100    # 低于此值的品种被排除
-    DATA_REFRESH_INTERVAL = 300   # 秒，实盘数据刷新间隔
+    BARS_COUNT            = 12000  # 每品种拉取的历史 K 线数（5品种需更多数据）
+    MIN_BARS              = 3000   # 低于此值的品种被排除
+    DATA_REFRESH_INTERVAL = 300    # 秒，实盘数据刷新间隔
 
-    # ── 模型参数 ──────────────────────────────────────────
-    INPUT_DIM       = 10           # 特征数，等于 MT5FeatureEngineer 输出维度（已扩展至10个特征）
-    BATCH_SIZE      = 512
-    TRAIN_STEPS     = 500
-    MAX_FORMULA_LEN = 12
+    # ── 模型参数（仅供参考，训练实际使用 model_core.config.ModelConfig）────
+    # 训练参数的权威来源是 model_core/config.py，这里的值不生效
+    INPUT_DIM       = 20           # 特征数（与 MT5FeatureEngineer.INPUT_DIM 一致）
+    BATCH_SIZE      = 128          # 参见 ModelConfig.BATCH_SIZE
+    TRAIN_STEPS     = 300          # 参见 ModelConfig.TRAIN_STEPS
+    MAX_FORMULA_LEN = 8            # 参见 ModelConfig.MAX_FORMULA_LEN
     DEVICE          = (
         torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if _TORCH_AVAILABLE

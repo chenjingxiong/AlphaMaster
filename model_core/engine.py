@@ -22,6 +22,17 @@ except ImportError:
     _CHECKPOINT_DIR = pathlib.Path("checkpoints")
 
 
+def _strategy_file_for_symbol(symbol: str | None) -> str:
+    """返回该品种对应的策略文件路径。
+
+    单品种训练时使用 strategies/best_{symbol}.json，
+    多品种/未指定品种时回退到默认路径。
+    """
+    if symbol:
+        return str(pathlib.Path("strategies") / f"best_{symbol}.json")
+    return _STRATEGY_FILE
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Walk-Forward 折叠构建
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,9 +124,11 @@ class ConstrainedSampler:
 
 class AlphaEngine:
     def __init__(self, data_manager=None, use_lord_regularization=True,
-                 lord_decay_rate=1e-3, lord_num_iterations=5, n_folds: int = 5):
-        self.data_manager = data_manager
-        self.n_folds = n_folds
+                 lord_decay_rate=1e-3, lord_num_iterations=5, n_folds: int = 5,
+                 target_symbol: str | None = None):
+        self.data_manager  = data_manager
+        self.n_folds       = n_folds
+        self.target_symbol = target_symbol   # None = 多品种模式，str = 单品种模式
         self.model   = AlphaGPT().to(ModelConfig.DEVICE)
         self.opt     = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
 
@@ -162,24 +175,37 @@ class AlphaEngine:
     @staticmethod
     def _compute_ic(factor: torch.Tensor, target_ret: torch.Tensor
                     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """时序 IC（每品种内部 factor[t] vs ret[t+1]）的均值与稳定性。
+
+        对 5 品种宇宙，时序 IC 比横截面 IC 统计意义更强。
+        """
         N, T = factor.shape
         if T < 2:
             z = torch.zeros(1, device=factor.device)
             return z, z
-        x = factor[:, :-1];    y = target_ret[:, 1:]
-        xm = x.mean(dim=0, keepdim=True);  ym = y.mean(dim=0, keepdim=True)
-        xc = x - xm;           yc = y - ym
-        cov = (xc * yc).mean(dim=0)
-        sx  = (xc ** 2).mean(dim=0).sqrt()
-        sy  = (yc ** 2).mean(dim=0).sqrt()
-        mask = (sx < 1e-6) | (sy < 1e-6)
-        ic   = cov / (sx * sy + 1e-8)
-        ic[mask] = 0.0
-        ic = torch.nan_to_num(ic, nan=0.0)
-        ic_mean = ic.mean()
-        ic_stab = (ic_mean / (ic.std(unbiased=False) + 1e-6)
-                   if ic.numel() >= 2
-                   else torch.zeros(1, device=factor.device))
+
+        ic_list = []
+        for n in range(N):
+            x  = factor[n, :-1]
+            y  = target_ret[n, 1:]
+            xm = x - x.mean()
+            ym = y - y.mean()
+            sx = (xm ** 2).mean().sqrt()
+            sy = (ym ** 2).mean().sqrt()
+            if sx < 1e-6 or sy < 1e-6:
+                continue
+            ic = (xm * ym).mean() / (sx * sy + 1e-8)
+            ic_list.append(ic)
+
+        if not ic_list:
+            z = torch.zeros(1, device=factor.device)
+            return z, z
+
+        ic_tensor = torch.stack(ic_list)
+        ic_mean   = ic_tensor.mean()
+        ic_stab   = (ic_mean / (ic_tensor.std(unbiased=False) + 1e-6)
+                     if ic_tensor.numel() >= 2
+                     else torch.zeros(1, device=factor.device))
         return ic_mean, ic_stab
 
     # ── IC gate: direction-based, dimension-agnostic ──────────────────────────
@@ -447,24 +473,30 @@ class AlphaEngine:
                 bic.append(ic_full.item());  bis.append(ic_stab_full.item())
                 bsor.append(val_score.item())
 
+                # 重复惩罚和相关性惩罚同时施加到 rewards 和 val_scores
+                # 保证 best_score / elite_pool 选优时已含所有惩罚
                 rp = _repetition_penalty(fml)
                 if rp > 0:
-                    rewards[i] -= rp;  val_scores[i] -= rp
-                rewards[i] = self._apply_corr_penalty(rewards[i], res)
+                    rewards[i]    -= rp
+                    val_scores[i] -= rp
+                rewards[i]    = self._apply_corr_penalty(rewards[i], res)
+                val_scores[i] = self._apply_corr_penalty(val_scores[i], res)
 
-                if val_score.item() > step_max_val:
-                    step_max_val = val_score.item();  step_best_f = fml
+                # 用含惩罚的 val_scores[i] 选全局最优
+                final_val = val_scores[i].item()
+                if final_val > step_max_val:
+                    step_max_val = final_val;  step_best_f = fml
 
-                if val_score.item() > self.best_score:
-                    self.best_score   = val_score.item()
+                if final_val > self.best_score:
+                    self.best_score   = final_val
                     self.best_formula = fml
                     self._best_snapshot = copy.deepcopy(self.model.state_dict())
-                    self._update_factor_pool(val_score.item(), res)
+                    self._update_factor_pool(final_val, res)
                     tqdm.write(
-                        f"[!] New King: Val={val_score:.3f} IC={ic_i:.4f} | "
+                        f"[!] New King: Val={final_val:.3f} IC={ic_i:.4f} | "
                         f"{fml}\n    {self._decode_formula(fml)}"
                     )
-                self._update_elite_pool(val_score.item(), fml)
+                self._update_elite_pool(final_val, fml)
 
 
             # ── Part D: REINFORCE gradient update ────────────────────
@@ -543,8 +575,14 @@ class AlphaEngine:
                 len(self._elite_pool))
 
             if self.best_formula is not None:
+                from .vocab import VOCAB_VERSION
+                strategy_data = {
+                    "vocab_version": VOCAB_VERSION,
+                    "formula": self.best_formula,
+                    "best_score": self.best_score,
+                }
                 with open(_STRATEGY_FILE, "w") as fp:
-                    json.dump(self.best_formula, fp)
+                    json.dump(strategy_data, fp, indent=2)
 
             if (step + 1) % 20 == 0 or (step + 1) == ModelConfig.TRAIN_STEPS:
                 ckpt = self.save_checkpoint(step + 1)
@@ -585,8 +623,14 @@ class AlphaEngine:
 
         # ── End of training ──────────────────────────────────────────
         if self.best_formula is not None:
+            from .vocab import VOCAB_VERSION
+            strategy_data = {
+                "vocab_version": VOCAB_VERSION,
+                "formula": self.best_formula,
+                "best_score": self.best_score,
+            }
             with open(_STRATEGY_FILE, "w") as fp:
-                json.dump(self.best_formula, fp)
+                json.dump(strategy_data, fp, indent=2)
         self.training_history.pop('_low_entropy_streak', None)
         with open("training_history.json", "w") as fp:
             json.dump(self.training_history, fp)

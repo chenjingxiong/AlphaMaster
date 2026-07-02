@@ -45,13 +45,13 @@ def _make_raw_dict(N: int = 3, T: int = 50, seed: int = 42) -> dict:
 # ─── 1. 输出形状 ──────────────────────────────────────────────────────────────
 
 class TestComputeFeaturesShape:
-    """compute_features 输出形状应为 [N, 10, T]（需求 F1.1, F1.2）"""
+    """compute_features 输出形状应为 [N, 20, T]（扩展自10，需求 F1.1, F1.2）"""
 
     def test_output_shape_default(self):
         raw = _make_raw_dict(N=3, T=50)
         out = MT5FeatureEngineer.compute_features(raw)
-        assert out.shape == (3, 10, 50), (
-            f"Expected shape (3, 10, 50), got {tuple(out.shape)}"
+        assert out.shape == (3, 20, 50), (
+            f"Expected shape (3, 20, 50), got {tuple(out.shape)}"
         )
 
     def test_output_ndim(self):
@@ -60,10 +60,10 @@ class TestComputeFeaturesShape:
         assert out.ndim == 3
 
     def test_feature_dim_equals_10(self):
-        """feature 维度固定为 10，对应 INPUT_DIM（需求 F1.7）"""
+        """feature 维度固定为 20，对应 INPUT_DIM（需求 F1.7）"""
         raw = _make_raw_dict(N=3, T=50)
         out = MT5FeatureEngineer.compute_features(raw)
-        assert out.shape[1] == 10
+        assert out.shape[1] == 20
 
     def test_time_dim_preserved(self):
         """T 维度应与输入完全一致（需求 F1.1）"""
@@ -96,12 +96,12 @@ class TestNoNanInf:
 # ─── 3. PRESSURE（索引 3）值域 ∈ [-1, 1] ─────────────────────────────────────
 
 class TestPressureRange:
-    """PRESSURE（索引 3）所有值应被 clamp 至 [-1, 1]（需求 F4.1）"""
+    """PRESSURE（索引 12）所有值应被 clamp 至 [-1, 1]（需求 F4.1）"""
 
     def test_pressure_leq_1(self):
         raw = _make_raw_dict(N=3, T=50)
         out = MT5FeatureEngineer.compute_features(raw)
-        pressure = out[:, 3, :]
+        pressure = out[:, 12, :]   # PRESSURE is now index 12 in 20-feature vocab
         assert (pressure <= 1.0).all(), (
             f"PRESSURE has values > 1.0, max={pressure.max().item():.4f}"
         )
@@ -109,7 +109,7 @@ class TestPressureRange:
     def test_pressure_geq_neg1(self):
         raw = _make_raw_dict(N=3, T=50)
         out = MT5FeatureEngineer.compute_features(raw)
-        pressure = out[:, 3, :]
+        pressure = out[:, 12, :]
         assert (pressure >= -1.0).all(), (
             f"PRESSURE has values < -1.0, min={pressure.min().item():.4f}"
         )
@@ -118,7 +118,7 @@ class TestPressureRange:
         """一次性验证 [-1, 1] 双侧边界（需求 F4.1）"""
         raw = _make_raw_dict(N=3, T=50)
         out = MT5FeatureEngineer.compute_features(raw)
-        pressure = out[:, 3, :]
+        pressure = out[:, 12, :]
         assert pressure.abs().max().item() <= 1.0 + 1e-6, (
             "PRESSURE violates [-1, 1] bound"
         )

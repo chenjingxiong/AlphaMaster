@@ -229,8 +229,14 @@ class AlphaGPT(nn.Module):
         self.vocab_size = FORMULA_VOCAB.size
         
         # Embedding
+        # pos_emb 用固定上限 20，与 MAX_FORMULA_LEN 解耦：
+        # - 阶段A (len=8) 和阶段B (len=14) 都能用同一模型权重
+        # - 测试无需随配置变更而调整
+        # - 手工评估或 14-token 公式都在范围内
+        _POS_EMB_MAX = 20
+        self._max_seq = _POS_EMB_MAX
         self.token_emb = nn.Embedding(self.vocab_size, self.d_model)
-        self.pos_emb = nn.Parameter(torch.zeros(1, ModelConfig.MAX_FORMULA_LEN + 1, self.d_model))
+        self.pos_emb = nn.Parameter(torch.zeros(1, _POS_EMB_MAX, self.d_model))
         
         # Enhanced Transformer with Looped Transformer
         self.blocks = LoopedTransformer(
@@ -252,7 +258,11 @@ class AlphaGPT(nn.Module):
     def forward(self, idx):
         # idx: [Batch, SeqLen]
         B, T = idx.size()
-        
+        if T > self._max_seq:
+            raise ValueError(
+                f"Input sequence length {T} exceeds max_seq {self._max_seq}. "
+                f"Increase ModelConfig.MAX_FORMULA_LEN."
+            )
         x = self.token_emb(idx) + self.pos_emb[:, :T, :]
         
         # Causal Mask

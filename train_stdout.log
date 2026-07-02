@@ -1,0 +1,38 @@
+🚀 Starting MT5 Alpha Mining with LoRD Regularization...
+   Entropy: thresh=0.5  coeff_max=0.5  collapse_steps=15
+   Elite Replay: frac=0.25  pool=30
+   IC gate: ±0.002  pos×1.15  neg×0.85
+   Max restarts: 8  noise=0.05
+   Walk-Forward: 4 折  T=11330
+  折1: train[0,2266) gap=0 val[2266,4532)
+  折2: train[0,4532) gap=0 val[4532,6798)
+  折3: train[0,6798) gap=0 val[6798,9064)
+  折4: train[0,9064) gap=0 val[9064,11330)
+[!] New King: Val=-1.476 IC=-0.0043 | [11, 14, 40, 21, 32, 14, 33, 23]
+    RSI14 -> VOL_RATIO -> TS_RANK_20 -> SUB -> TS_MEAN_5 -> VOL_RATIO -> TS_MEAN_10 -> DIV
+[!] New King: Val=-1.352 IC=0.0086 | [8, 39, 9, 17, 19, 5, 27, 27]
+    VOL_REGIME -> TS_RANK_10 -> DEV -> REL_RET5 -> REL_VOL -> ATR -> GATE -> GATE
+[!] New King: Val=-1.093 IC=-0.0000 | [18, 8, 29, 4, 0, 26, 20, 27]
+    REL_RET20 -> VOL_REGIME -> DECAY -> SLOPE20 -> RET -> SIGN -> ADD -> GATE
+[!] New King: Val=-0.752 IC=0.0043 | [9, 28, 10, 17, 40, 23, 6, 27]
+    DEV -> JUMP -> DEV60 -> REL_RET5 -> TS_RANK_20 -> DIV -> RVOL -> GATE
+[!] New King: Val=-0.704 IC=0.0096 | [10, 8, 2, 37, 25, 46, 37, 27]
+    DEV60 -> VOL_REGIME -> RET20 -> TS_STD_20 -> ABS -> WMA -> TS_STD_20 -> GATE
+[!] New King: Val=-0.300 IC=-0.0001 | [14, 43, 9, 47, 21, 36, 26, 29]
+    VOL_RATIO -> MOMENTUM_10 -> DEV -> DELAY4 -> SUB -> TS_STD_10 -> SIGN -> DECAY
+[!] New King: Val=-0.150 IC=-0.0001 | [14, 43, 9, 47, 21, 36, 26, 29]
+    VOL_RATIO -> MOMENTUM_10 -> DEV -> DELAY4 -> SUB -> TS_STD_10 -> SIGN -> DECAY
+[1/300] new=96 elite=32 | ok=127 none=0 const=1 | Rew=-1.650 Val=-1.163 | IC=0.0016 | H=3.121(c=0.079) | Best=-0.150 epool=30
+[!] New King: Val=-0.112 IC=0.0041 | [15, 34, 40, 5, 22, 26, 43, 24]
+    VOL_Z -> TS_MEAN_20 -> TS_RANK_20 -> ATR -> MUL -> SIGN -> MOMENTUM_10 -> NEG
+[!] New King: Val=0.017 IC=0.0060 | [3, 17, 44, 41, 43, 8, 22, 34]
+    MA_DIFF -> REL_RET5 -> TS_MAX_10 -> TS_CORR_10 -> MOMENTUM_10 -> VOL_REGIME -> MUL -> TS_MEAN_20
+[2/300] new=96 elite=32 | ok=128 none=0 const=0 | Rew=-1.194 Val=-0.916 | IC=0.0008 | H=3.210(c=0.077) | Best=0.017 epool=30
+[3/300] new=96 elite=32 | ok=128 none=0 const=0 | Rew=-1.147 Val=-0.872 | IC=0.0015 | H=3.184(c=0.078) | Best=0.017 epool=30
+[4/300] new=96 elite=32 | ok=128 none=0 const=0 | Rew=-0.932 Val=-0.767 | IC=0.0011 | H=3.260(c=0.076) | Best=0.017 epool=30
+[5/300] new=96 elite=32 | ok=128 none=0 const=0 | Rew=-1.041 Val=-0.811 | IC=0.0015 | H=3.185(c=0.078) | Best=0.017 epool=30
+[6/300] new=96 elite=32 | ok=128 none=0 const=0 | Rew=-1.056 Val=-0.782 | IC=0.0013 | H=3.172(c=0.078) | Best=0.017 epool=30
+[!] New King: Val=0.131 IC=-0.0020 | [8, 36, 37, 40, 46, 35, 34, 31]
+    VOL_REGIME -> TS_STD_10 -> TS_STD_20 -> TS_RANK_20 -> WMA -> TS_STD_5 -> TS_MEAN_20 -> MAX3
+[7/300] new=96 elite=32 | ok=127 none=0 const=1 | Rew=-1.020 Val=-0.782 | IC=0.0021 | H=3.196(c=0.078) | Best=0.131 epool=30
+[8/300] new=96 elite=32 | ok=128 none=0 const=0 | Rew=-0.831 Val=-0.703 | IC=0.0011 | H=3.215(c=0.077) | Best=0.131 epool=30

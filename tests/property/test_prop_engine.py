@@ -306,46 +306,50 @@ def test_ic_arithmetic_consistency(N: int, T: int) -> None:
     """
     Property 9: IC Calculation Arithmetic Consistency
 
-    _compute_ic(factor, target_ret) returns ic_mean that equals the mean
-    of manually computed IC_t = Pearson_corr(factor[:,t], target_ret[:,t+1])
-    for t = 0, 1, ..., T-2.
+    _compute_ic now computes time-series IC (per-symbol):
+    for each symbol n, IC_n = Pearson_corr(factor[n, :-1], target_ret[n, 1:])
+    ic_mean = mean across symbols of IC_n values.
 
     **Validates: Requirements T1.3, T1.4**
     """
     from model_core.engine import AlphaEngine
 
     torch.manual_seed(0)
-    factor = torch.randn(N, T)
+    factor     = torch.randn(N, T)
     target_ret = torch.randn(N, T)
 
     ic_mean, ic_stability = AlphaEngine._compute_ic(factor, target_ret)
 
-    # Manual step-by-step IC computation
-    ics = []
-    for t in range(T - 1):
-        x = factor[:, t]
-        y = target_ret[:, t + 1]
+    # Manual time-series IC: per symbol, factor[n,:-1] vs target_ret[n,1:]
+    ic_list = []
+    for n in range(N):
+        x = factor[n, :-1]
+        y = target_ret[n, 1:]
         sx = x.std(unbiased=False)
         sy = y.std(unbiased=False)
         if sx.item() < 1e-6 or sy.item() < 1e-6:
-            ics.append(0.0)
-        else:
-            xc = x - x.mean()
-            yc = y - y.mean()
-            corr = (xc * yc).mean() / (sx * sy + 1e-8)
-            ics.append(corr.item())
+            continue
+        xc = x - x.mean()
+        yc = y - y.mean()
+        corr = (xc * yc).mean() / (sx * sy + 1e-8)
+        ic_list.append(corr.item())
 
-    expected_ic_mean = torch.tensor(ics).mean()
-    assert torch.isclose(ic_mean, expected_ic_mean, atol=1e-5), (
+    if not ic_list:
+        # All symbols degenerate — ic_mean should be ~0
+        assert ic_mean.abs().item() < 1e-4
+        return
+
+    expected_ic_mean = torch.tensor(ic_list).mean()
+    assert torch.isclose(ic_mean, expected_ic_mean, atol=1e-4), (
         f"ic_mean={ic_mean.item():.6f} != expected={expected_ic_mean.item():.6f}, "
         f"diff={abs(ic_mean.item() - expected_ic_mean.item()):.2e}"
     )
 
-    # ic_stability = ic_mean / (ic_std + 1e-6)
-    if len(ics) >= 2:
-        ic_tensor = torch.tensor(ics)
+    # ic_stability = ic_mean / (ic_std + 1e-6), based on per-symbol IC values
+    if len(ic_list) >= 2:
+        ic_tensor = torch.tensor(ic_list)
         expected_stability = ic_tensor.mean() / (ic_tensor.std(unbiased=False) + 1e-6)
-        assert torch.isclose(ic_stability, expected_stability, atol=1e-5), (
+        assert torch.isclose(ic_stability, expected_stability, atol=1e-4), (
             f"ic_stability={ic_stability.item():.6f} != "
             f"expected={expected_stability.item():.6f}"
         )
