@@ -1,0 +1,20 @@
+{
+  "vocab_version": "v6ff4c52e30c1",
+  "group": "metals_comm",
+  "symbols": [
+    "XAUUSD",
+    "AAVUSD",
+    "COCOA.c"
+  ],
+  "formula": [
+    31,
+    20,
+    56,
+    123,
+    105,
+    29,
+    68,
+    130
+  ],
+  "best_score": 4.444620609283447
+}

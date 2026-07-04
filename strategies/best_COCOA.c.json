@@ -1,0 +1,17 @@
+{
+  "vocab_version": "v6ff4c52e30c1",
+  "symbol": "COCOA.c",
+  "group": "metals_comm",
+  "formula": [
+    31,
+    20,
+    56,
+    123,
+    105,
+    29,
+    68,
+    130
+  ],
+  "best_score": 4.444620609283447,
+  "source": "group_metals_comm"
+}

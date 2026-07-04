@@ -496,6 +496,8 @@ class AlphaEngine:
                     self.best_formula = fml
                     self._best_snapshot = copy.deepcopy(self.model.state_dict())
                     self._update_factor_pool(final_val, res)
+                    # 即时保存：任何时刻进程退出都有最新最优公式（防终端回收丢策略）
+                    self._save_strategy_live()
                     tqdm.write(
                         f"[!] New King: Val={final_val:.3f} IC={ic_i:.4f} | "
                         f"{fml}\n    {self._decode_formula(fml)}"
@@ -669,6 +671,28 @@ class AlphaEngine:
         print(f"  Restarts       : {self._restart_count}")
         print(f"  Strategy saved : {save_path}")
 
+
+    # ── 实时保存最优公式（防进程意外退出丢失）────────────────────────────────
+    def _save_strategy_live(self) -> None:
+        """每次 best_formula 更新时立即保存 strategy json。
+        即使训练中途进程被杀（OOM/终端回收/Ctrl+C），也能保留最新最优公式。
+        """
+        if self.best_formula is None:
+            return
+        try:
+            from .vocab import VOCAB_VERSION
+            strategy_data = {
+                "vocab_version": VOCAB_VERSION,
+                "symbol":        self.target_symbol,
+                "formula":       self.best_formula,
+                "best_score":    self.best_score,
+            }
+            save_path = _strategy_file_for_symbol(self.target_symbol)
+            pathlib.Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(save_path, "w") as fp:
+                json.dump(strategy_data, fp, indent=2)
+        except Exception:
+            pass
 
     # ── Checkpoint save / load ────────────────────────────────────────────────
 

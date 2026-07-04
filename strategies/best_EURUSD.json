@@ -1,6 +1,7 @@
 {
   "vocab_version": "v6ff4c52e30c1",
-  "symbol": "forex",
+  "symbol": "EURUSD",
+  "group": "forex",
   "formula": [
     10,
     31,
@@ -11,5 +12,6 @@
     73,
     66
   ],
-  "best_score": 6.61782169342041
+  "best_score": 6.61782169342041,
+  "source": "group_forex"
 }

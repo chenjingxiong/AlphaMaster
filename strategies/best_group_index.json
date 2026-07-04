@@ -1,0 +1,22 @@
+{
+  "vocab_version": "v6ff4c52e30c1",
+  "group": "index",
+  "symbols": [
+    "US30.cash",
+    "US100.cash",
+    "US500.cash",
+    "US2000.cash",
+    "JP225.cash"
+  ],
+  "formula": [
+    32,
+    14,
+    45,
+    33,
+    66,
+    104,
+    129,
+    92
+  ],
+  "best_score": 8.22597885131836
+}

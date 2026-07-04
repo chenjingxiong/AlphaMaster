@@ -1,6 +1,10 @@
 {
   "vocab_version": "v6ff4c52e30c1",
-  "symbol": "forex",
+  "group": "forex",
+  "symbols": [
+    "EURUSD",
+    "USDJPY"
+  ],
   "formula": [
     10,
     31,
