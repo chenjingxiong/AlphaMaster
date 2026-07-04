@@ -48,7 +48,10 @@ class MT5Backtest:
         downside = flat[flat < 0]
         raw_std  = downside.std(unbiased=False) if downside.numel() > 0 \
                    else torch.tensor(0.0, dtype=flat.dtype, device=flat.device)
-        floor          = torch.clamp(mean_pnl.abs(), min=eps)
+        # P0b 修复：下行标准差地板改为全序列 std 的 20%，防止稀疏 PnL 靠极小分母刷高分。
+        # 原来 floor=|mean_pnl| 对稀疏序列趋近于零，导致 Sortino 爆炸。
+        full_std       = flat.std(unbiased=False).clamp(min=eps)
+        floor          = torch.clamp(full_std * 0.2, min=eps)
         downside_std   = torch.clamp(raw_std, min=floor)
         sortino        = mean_pnl / downside_std * math.sqrt(self.periods_per_year)
         return torch.clamp(sortino, -_SORTINO_CLIP, _SORTINO_CLIP)
@@ -106,58 +109,58 @@ class MT5Backtest:
         self,
         per_symbol_sortino: list[float],
         per_symbol_trade_count: list[int] | None = None,
+        eval_bars: int = 0,
     ) -> float:
         """品种一致性惩罚/奖励。
 
         规则（优先级从高到低）：
-        1. 无交易品种超过 40%：重惩罚 -3.0（公式对多数品种无效）
-        2. 任何品种 Sortino < -2.0：重惩罚 -2.0
-        3. 有效品种（有交易）中正收益比例决定奖惩：
-           - 有效正收益 < 60%：线性惩罚 [-1.0, 0)
-           - 有效正收益 ≥ 60%：线性奖励 [0, 1.0]
-           - 全部有效品种正收益：额外 +0.5
-
-        Args:
-            per_symbol_sortino:     每品种的 Sortino 值列表
-            per_symbol_trade_count: 每品种的交易笔数（None 时不检查活跃度）
+        1. 无交易品种超过 40%：重惩罚 -3.0
+        2. P0a 新增：有交易的品种中，交易笔数 < eval_bars/100 (约每100bar少于1笔)
+           视为"稀疏有效"，等同无效。防止3~6笔偶发交易刷高 Sortino。
+        3. 任何品种 Sortino < -2.0：重惩罚 -2.0
+        4. 有效品种中正收益比例决定奖惩
         """
         N = len(per_symbol_sortino)
         if N == 0:
             return 0.0
 
-        # 1. 无交易品种超过 40%：最严重惩罚
+        # 最小有效交易数：每 100 bar 至少 1 笔，下限 5 笔
+        min_trades = max(5, eval_bars // 100) if eval_bars > 0 else 5
+
+        # 重新判定"活跃"品种（必须交易数 >= min_trades）
         if per_symbol_trade_count is not None:
-            n_inactive = sum(1 for c in per_symbol_trade_count if c == 0)
+            n_inactive = sum(1 for c in per_symbol_trade_count if c < min_trades)
             inactive_ratio = n_inactive / N
             if inactive_ratio > 0.4:
                 return -3.0
+        else:
+            n_inactive = 0
+            inactive_ratio = 0.0
 
-        # 2. 任何品种严重亏损：重惩罚
         if any(s < -2.0 for s in per_symbol_sortino):
             return -2.0
 
-        # 3. 有效品种（有交易）中的正收益比例
         if per_symbol_trade_count is not None:
-            # 只统计有交易的品种
             active_sortinos = [
-                s for s, c in zip(per_symbol_sortino, per_symbol_trade_count) if c > 0
+                s for s, c in zip(per_symbol_sortino, per_symbol_trade_count)
+                if c >= min_trades
             ]
         else:
             active_sortinos = per_symbol_sortino
 
         if not active_sortinos:
-            return -3.0   # 全部无交易
+            return -3.0
 
         n_positive = sum(1 for s in active_sortinos if s > 0)
         ratio = n_positive / len(active_sortinos)
 
         if ratio < 0.6:
-            score = (ratio - 0.6) / 0.6 * 1.0   # [-1.0, 0)
+            score = (ratio - 0.6) / 0.6 * 1.0
         else:
-            score = (ratio - 0.6) / 0.4 * 1.0   # [0, 1.0]
+            score = (ratio - 0.6) / 0.4 * 1.0
 
         if ratio == 1.0:
-            score += 0.5   # 全部活跃品种正收益额外奖励
+            score += 0.5
 
         return float(score)
 
@@ -230,6 +233,23 @@ class MT5Backtest:
 
         return float(freq_score + hold_bonus)
 
+    def _exposure_penalty(self, position: Tensor) -> float:
+        """在场时间惩罚：非零仓位占比应在 [15%, 70%] 范围内。
+
+        P0a 新增：防止稀疏交易（<15%在场）靠偶发盈利刷高 Sortino。
+        同时抑制频繁全仓（>70%在场）的过度交易风格。
+        返回值：[-2.0, 0.0]，在合理范围内为 0。
+        """
+        flat = position.reshape(-1).abs()
+        exposure = (flat > 0).float().mean().item()
+        if exposure < 0.15:
+            # 稀疏：0% → -2.0，15% → 0.0
+            return float((exposure / 0.15 - 1.0) * 2.0)
+        elif exposure > 0.70:
+            # 过密：70% → 0.0，100% → -1.0
+            return float(-((exposure - 0.70) / 0.30) * 1.0)
+        return 0.0
+
     def _turnover_penalty(self, turnover: Tensor) -> Tensor:
         """梯度式换手率惩罚。"""
         mean_to = turnover.mean()
@@ -271,19 +291,23 @@ class MT5Backtest:
         pnl_val   = pnl[:, val_start:val_end]
 
         # 训练段：多目标 + 换手率惩罚
+        train_bars = train_end - train_start
         train_score = self._multi_objective(
             factors[:, train_start:train_end],
             target_ret[:, train_start:train_end],
             pnl_train,
             position[:, train_start:train_end],
+            eval_bars=train_bars,
         ) + self._turnover_penalty(turnover[:, train_start:train_end])
 
         # 验证段：多目标 × OOS Sortino 门控
+        val_bars = val_end - val_start
         base_val    = self._multi_objective(
             factors[:, val_start:val_end],
             target_ret[:, val_start:val_end],
             pnl_val,
             position[:, val_start:val_end],
+            eval_bars=val_bars,
         )
         oos_sor = self._sortino(pnl_val).item()
         if oos_sor <= 0:
@@ -302,29 +326,30 @@ class MT5Backtest:
         target_ret: Tensor,
         pnl:        Tensor,
         position:   Tensor,
+        eval_bars:  int = 0,
     ) -> Tensor:
         """统一的多目标评分。
 
         N=1 时（单品种训练模式）：跳过多品种统计，直接用 Sortino+Calmar+IC+hold_quality。
         N>1 时（组合模式）：加入 symbol_consistency 和 cost_stress。
+        P0a 新增：所有模式都加入 exposure_penalty，防止稀疏公式刷分。
         """
         N = pnl.shape[0]
         port_sortino = self._sortino(pnl)
         port_calmar  = self._calmar(pnl)
         ts_ic        = self._ts_ic_stability(factors, target_ret)
         tq           = self._turnover_quality(position)
+        exp_pen      = self._exposure_penalty(position)   # P0a：在场时间惩罚
 
         if N == 1:
-            # 单品种：不做 symbol_consistency 和 cost_stress（无意义）
-            # 权重重新分配给 Sortino 和 IC
             return (
                 0.45 * port_sortino
                 + 0.25 * port_calmar
                 + 0.20 * ts_ic
                 + 0.10 * tq
+                + exp_pen          # 直接相加，范围 [-2, 0]
             )
 
-        # 多品种：完整多目标
         per_sym_sortino     = []
         per_sym_trade_count = []
         for n in range(N):
@@ -338,7 +363,9 @@ class MT5Backtest:
                 prev = vi if vi != 0 else prev
             per_sym_trade_count.append(trades)
 
-        sym_cons = self._symbol_consistency(per_sym_sortino, per_sym_trade_count)
+        sym_cons = self._symbol_consistency(
+            per_sym_sortino, per_sym_trade_count, eval_bars=eval_bars
+        )
         cost_s   = self._cost_stress(position, target_ret)
 
         return (
@@ -348,6 +375,7 @@ class MT5Backtest:
             + 0.10 * sym_cons
             + 0.10 * cost_s
             + 0.10 * tq
+            + exp_pen              # P0a：在场时间惩罚
         )
 
     # ──────────────────────────────────────────────────────────────────────
@@ -374,6 +402,7 @@ class MT5Backtest:
         score = self._multi_objective(
             factors[:, :split], target_ret[:, :split],
             pnl[:, :split], position[:, :split],
+            eval_bars=split,
         ) + self._turnover_penalty(turnover[:, :split])
 
         # OOS 门控（最后 20%）

@@ -683,11 +683,10 @@ _TASK34_OPERATORS = [
     ('SIGMOID',       _sigmoid_squash,               1),
     ('TANH_SQUASH',   _tanh_squash,                  1),
     # 条件/逻辑算子（R2.7）
-    ('GT',    _gt,    2),   # (x>y).float()
-    ('LT',    _lt,    2),   # (x<y).float()
-    ('AND',   _and,   2),   # ((x>0)&(y>0)).float()
-    ('OR',    _or,    2),   # ((x>0)|(y>0)).float()
-    ('IF_GT', _if_gt, 3),   # where(x>0, y, z)
+    # P1 注意：LT/GT/AND/OR 输出纯 0/1 二值，与 Neutral Band 连续因子语义冲突，
+    # 容易被模型利用来制造稀疏信号刷高训练分，已从词表移除。
+    # IF_GT 输出连续值（条件混合），保留。
+    ('IF_GT', _if_gt, 3),   # where(x>0, y, z) — 输出连续值，保留
 ]
 
 
@@ -712,7 +711,7 @@ OPS_CONFIG = [
     for spec in OPERATOR_REGISTRY.operator_specs
 ]
 
-# Task 3.4：新增算子必须全部在册
+# Task 3.4：新增算子必须全部在册（LT/GT/AND/OR 已移除，保留 7 个）
 _EXPECTED_T34_NAMES = {name for name, _, _ in _TASK34_OPERATORS}
 _REGISTERED_NAMES_T34 = set(OPERATOR_REGISTRY.operator_names)
 assert _EXPECTED_T34_NAMES <= _REGISTERED_NAMES_T34, (

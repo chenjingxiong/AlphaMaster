@@ -23,10 +23,10 @@
     "AROON_OSC_25",
     "DMI_DIFF_14",
     "DONCHIAN_POS_20",
+    "KELTNER_POS_20",
     "ICHIMOKU_KIJUN_DEV",
     "SAR_DIST",
     "ROLL_KURT_20",
-    "CS_RANK_RET5",
     "CS_ZSCORE_RET20"
   ],
   "meta": {
@@ -47,6 +47,6 @@
       "US2000.cash",
       "JP225.cash"
     ],
-    "bars": 3498
+    "bars": 3494
   }
 }

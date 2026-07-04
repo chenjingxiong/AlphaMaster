@@ -43,11 +43,14 @@ class ModelConfig:
     # ── 特征维度（由 vocab.py 自动派生，无需手动修改）──────────────────
     INPUT_DIM: int = FORMULA_VOCAB.feature_count  # == 10
 
-    # ── Reward：Sortino 为主，IC 做门控而非线性加权 ────────────────────
+    # ── Reward：Sortino 为主，IC 做门控 ──────────────────────────────────
+    # P2 加强：IC_GATE_THRESH 0.002→0.01，负 IC 惩罚 0.85→0.30。
+    # 原来阈值 0.002 太低（几乎没门控），负 IC 惩罚 ×0.85 不足以淘汰反向预测因子。
+    # 修改后：IC 方向明确错误（<-0.01）时 reward 直接打 3 折，让反向因子无法登顶。
     REWARD_ALPHA:      float = 1.0
-    IC_GATE_THRESH:    float = 0.002  # 0.005→0.002：降低门控阈值，让IC更频繁参与调节
+    IC_GATE_THRESH:    float = 0.01   # 0.002 → 0.01
     IC_GATE_MULT:      float = 1.15
-    IC_NEG_MULT:       float = 0.85
+    IC_NEG_MULT:       float = 0.30   # 0.85 → 0.30
 
     # ── 熵保护（大空间加强版）──────────────────────────────────────────
     # ENTROPY_COEFF_MAX 0.5→1.0：加倍探索压力，对抗大 vocab 的过早收敛。

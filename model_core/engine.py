@@ -14,6 +14,15 @@ from .vm import StackVM
 from .backtest import MT5Backtest
 from .vocab import FORMULA_VOCAB, VOCAB_VERSION, VocabVersionMismatchError  # task 12.2
 
+# P3：冠军在场时间稳健性校验所需
+try:
+    from strategy_manager.signal import compute_target_positions_stateless
+except ImportError:
+    # 兼容无 strategy_manager 的测试环境
+    def compute_target_positions_stateless(factors):  # type: ignore
+        import torch as _torch
+        return _torch.sign(_torch.tanh(factors))
+
 try:
     from config import Config as _RootConfig
     _STRATEGY_FILE  = _RootConfig.STRATEGY_FILE
@@ -492,16 +501,23 @@ class AlphaEngine:
                     step_max_val = final_val;  step_best_f = fml
 
                 if final_val > self.best_score:
-                    self.best_score   = final_val
-                    self.best_formula = fml
-                    self._best_snapshot = copy.deepcopy(self.model.state_dict())
-                    self._update_factor_pool(final_val, res)
-                    # 即时保存：任何时刻进程退出都有最新最优公式（防终端回收丢策略）
-                    self._save_strategy_live()
-                    tqdm.write(
-                        f"[!] New King: Val={final_val:.3f} IC={ic_i:.4f} | "
-                        f"{fml}\n    {self._decode_formula(fml)}"
-                    )
+                    # P3：冠军选择稳健性校验——在场时间 < 10% 的稀疏公式拒绝成为冠军
+                    pos_check = compute_target_positions_stateless(res)
+                    exposure = (pos_check.abs() > 0).float().mean().item()
+                    if exposure < 0.10:
+                        pass   # 稀疏公式：参与梯度更新但不登顶
+                    else:
+                        self.best_score   = final_val
+                        self.best_formula = fml
+                        self._best_snapshot = copy.deepcopy(self.model.state_dict())
+                        self._update_factor_pool(final_val, res)
+                        # 即时保存：任何时刻进程退出都有最新最优公式（防终端回收丢策略）
+                        self._save_strategy_live()
+                        tqdm.write(
+                            f"[!] New King: Val={final_val:.3f} IC={ic_i:.4f} "
+                            f"Exp={exposure:.1%} | "
+                            f"{fml}\n    {self._decode_formula(fml)}"
+                        )
                 self._update_elite_pool(final_val, fml)
 
 
