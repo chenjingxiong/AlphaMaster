@@ -22,6 +22,7 @@ import torch
 from torch import Tensor
 
 from strategy_manager.signal import compute_target_positions_stateless
+from .config import ModelConfig
 
 _H1_PERIODS_PER_YEAR = 6240
 _SORTINO_CLIP        = 20.0
@@ -346,6 +347,16 @@ class MT5Backtest:
         exp_pen      = self._exposure_penalty(position)
 
         if N == 1:
+            if ModelConfig.REWARD_MODE == "ftmo":
+                # FTMO 专属：年化收益 0.80，Calmar 0.10（控制 MDD 贴近 10% 上限）
+                return (
+                    0.80 * ann_ret           # 主目标：年化绝对收益（FTMO 加权）
+                    + 0.05 * port_sortino    # 风险调整辅助（降权）
+                    + 0.10 * port_calmar     # 回撤控制（保持，对齐 10% Max Loss）
+                    + 0.03 * ts_ic           # IC 预测方向（降权）
+                    + 0.02 * tq              # 交易频率质量（降权）
+                    + exp_pen                # 稀疏惩罚
+                )
             return (
                 0.60 * ann_ret           # 主目标：年化绝对收益
                 + 0.15 * port_sortino    # 风险调整辅助
@@ -370,6 +381,19 @@ class MT5Backtest:
             per_sym_sortino, per_sym_trade_count, eval_bars=eval_bars
         )
         cost_s   = self._cost_stress(position, target_ret)
+
+        if ModelConfig.REWARD_MODE == "ftmo":
+            # FTMO 专属：年化收益 0.75（提权），Calmar 0.10（对齐 10% Max Loss）
+            return (
+                0.75 * ann_ret               # 主目标：年化绝对收益（FTMO 加权）
+                + 0.05 * port_sortino        # 风险调整辅助（降权）
+                + 0.10 * port_calmar         # 回撤控制（提权，控制 MDD）
+                + 0.02 * ts_ic               # IC 预测方向（降权）
+                + 0.03 * sym_cons            # 品种一致性（降权）
+                + 0.02 * cost_s              # 成本压力测试（降权）
+                + 0.03 * tq                  # 交易频率质量（降权）
+                + exp_pen                    # 稀疏惩罚
+            )
 
         return (
             0.60 * ann_ret               # 主目标：年化绝对收益

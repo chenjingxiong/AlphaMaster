@@ -77,6 +77,8 @@ class MT5DataFetcher:
             若品种不可用，返回空 DataFrame（列名相同）。
         """
         # ── 优先读本地缓存 ────────────────────────────────────────────
+        # 使用本地缓存的全部历史数据，不再用 tail(count) 截断。
+        # count 仅用于无本地缓存时从 MT5 全量下载的最大根数。
         try:
             from data_pipeline.kline_cache import KlineCache
             cache = KlineCache(timeframe=timeframe, bars_count=count)
@@ -87,9 +89,9 @@ class MT5DataFetcher:
                 and mt5 is not None
             )
             df = cache.get(symbol, mt5_connected=mt5_connected)
-            if df is not None and len(df) >= count * 0.5:
-                # 本地有足够数据（至少要求的 50%），直接返回最新的 count 根
-                return df.tail(count).reset_index(drop=True)
+            if df is not None and not df.empty:
+                # 本地有数据，返回全部历史（不截断）
+                return df.reset_index(drop=True)
         except Exception as exc:
             logger.debug(f"[Fetcher] Cache read failed for {symbol}: {exc}, falling back to MT5")
 

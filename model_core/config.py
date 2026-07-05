@@ -51,6 +51,13 @@ class ModelConfig:
     IC_GATE_MULT:      float = 1.15
     IC_NEG_MULT:       float = 0.75   # 收益优先：不过度误杀反向/非线性高收益因子
 
+    # ── FTMO 专属奖励模式 ─────────────────────────────────────────────
+    # "standard": 收益+风险平衡（默认，原权重）
+    # "ftmo":     FTMO 考试盘专属——年化收益权重 0.60→0.75，Calmar 0.05→0.10
+    #             （控制 MDD 贴近 10% Max Loss 上限），其余指标权重下调。
+    #             目标：在 10% Max Loss 约束下最大化年化收益，快速达标。
+    REWARD_MODE:       str = "ftmo"
+
     # ── 熵保护（大空间加强版）──────────────────────────────────────────
     # ENTROPY_COEFF_MAX 0.5→1.0：加倍探索压力，对抗大 vocab 的过早收敛。
     # ENTROPY_COLLAPSE_THRESH 改为相对阈值 0.15×ln(vocab)：大 vocab 最大熵更高
