@@ -94,8 +94,7 @@ def save_group_strategy(engine: AlphaEngine, group_name: str, symbols: list[str]
 def train_group(fetcher, group_name: str, symbols: list[str], offline: bool):
     """训练一个品种组，使用组内独立的 DataManager（不与其他组取时间交集）。
 
-    核心改进：每组单独 load，只对组内品种取时间对齐，避免因 crypto/指数
-    交易时间不同导致 forex 组的 12000 根数据被砍到 3498 根。
+    自动检测是否有可续训的 checkpoint：若存在则从断点继续，否则从 step 0 开始。
     """
     print(f"\n{'─'*60}")
     print(f"  [{group_name}] 组: {symbols}")
@@ -123,7 +122,29 @@ def train_group(fetcher, group_name: str, symbols: list[str], offline: bool):
         return None
 
     engine = AlphaEngine(data_manager=group_mgr, target_symbol=group_name)
-    engine.train()
+
+    # ── 自动续训：检测最新 checkpoint ────────────────────────────────
+    import glob as _glob
+    ckpt_pattern = str(pathlib.Path("checkpoints") / f"ckpt_{group_name}_step_*.pt")
+    ckpt_files = sorted(_glob.glob(ckpt_pattern))
+    start_step = 0
+    if ckpt_files:
+        latest_ckpt = ckpt_files[-1]
+        try:
+            start_step = engine.load_checkpoint(latest_ckpt)
+            print(f"  [续训] 从 {latest_ckpt} 恢复，start_step={start_step}")
+        except Exception as e:
+            print(f"  [警告] checkpoint 加载失败（{e}），从头开始训练")
+            start_step = 0
+    else:
+        print(f"  [新训] 未找到 checkpoint，从 step 0 开始")
+
+    if start_step >= ModelConfig.TRAIN_STEPS:
+        print(f"  [完成] {group_name} 已完成全部 {ModelConfig.TRAIN_STEPS} 步，跳过训练")
+        save_group_strategy(engine, group_name, actual_symbols)
+        return engine
+
+    engine.train(start_step=start_step)
     save_group_strategy(engine, group_name, actual_symbols)
     return engine
 
