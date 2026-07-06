@@ -68,6 +68,13 @@ class ModelConfig:
     ENTROPY_COLLAPSE_THRESH: float = 0.15 * math.log(FORMULA_VOCAB.size)
     ENTROPY_COLLAPSE_STEPS:  int   = 40
 
+    # ── 熵下限惩罚（Fix 1: H→0 时熵项归零问题）──────────────────────────
+    # 当 H < ENTROPY_FLOOR_THRESH 时，加入固定惩罚 λ×(thresh-H)。
+    # 这确保即使 mean_ent→0，loss 中仍有非零探索压力。
+    ENTROPY_FLOOR:        bool  = True
+    ENTROPY_FLOOR_THRESH: float = 0.5   # 熵低于此值时触发固定惩罚
+    ENTROPY_FLOOR_LAMBDA: float = 2.0   # 惩罚强度系数
+
     # ── Elite Replay ──────────────────────────────────────────────────
     ELITE_REPLAY_FRAC:  float = 0.25
     ELITE_POOL_SIZE:    int   = 60    # 30→60：大空间需要更大的精英记忆
@@ -88,6 +95,16 @@ class ModelConfig:
     NOISE_MIN:           float = 0.15
     NOISE_MAX:           float = 0.60
     NOISE_BOOST_FACTOR:  float = 2.0   # noise += 0.2 * (stagnation / window)
+
+    # ── 重启多样性（Fix 2: best_snapshot 吸引子效应）─────────────────────
+    # 每 FULL_RESET_EVERY 次重启中，做 1 次完全随机初始化而非从 best_snapshot 恢复。
+    FULL_RESET_EVERY:    int   = 3     # 每 3 次重启中第 3 次做 full reset
+
+    # ── Reward baseline（Fix 3: 全负 batch 相对优选问题）──────────────────
+    # 用 EMA baseline 替代 batch mean 计算 advantage，避免全负 batch 的问题。
+    REWARD_EMA_BASELINE:     bool  = True
+    REWARD_EMA_DECAY:        float = 0.95   # EMA 衰减系数
+    REWARD_EMA_WARMUP:       int   = 10     # 前 N 步用 batch mean（EMA 未稳定）
 
     # ── 重启时部分重置参数：保留底层，扰动顶层 ───────────────────────────
     PARTIAL_RESET:       bool  = True

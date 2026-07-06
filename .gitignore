@@ -64,12 +64,15 @@ checkpoints/
 training_history*.json
 best_mt5_strategy.json
 
-# ── 策略输出（训练/回测生成，非源码）────────────────────────────────
-strategies/best_*.json
-strategies/strategy_*.json
+# ── 策略输出 ──────────────────────────────────────────────────────
+# 策略因子文件保留跟踪（研究成果）
+# strategies/best_*.json
+# strategies/strategy_*.json
 strategies/aligned_symbols*.json
 strategies/aligned_symbols*.txt
 strategies/*_progress.txt
+strategies/best_forex_smoke.json
+strategies/best_group_forex_smoke.json
 
 # ── 回测输出（图表与报告）──────────────────────────────────────────
 backtest_output/
@@ -92,3 +95,5 @@ data/cache/
 
 # ── 临时脚本/分析输出 ──────────────────────────────────────────────
 _tmp_*.py
+backtest_current_forex.py
+_quick_bt.py

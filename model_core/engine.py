@@ -232,6 +232,10 @@ class AlphaEngine:
         self._best_update_step = 0
         self._stagnation_steps = 0
 
+        # Fix 3: EMA reward baseline
+        self._reward_ema: float | None = None
+        self._reward_ema_step: int = 0
+
     # ── IC computation ────────────────────────────────────────────────────────
 
     @staticmethod
@@ -667,8 +671,20 @@ class AlphaEngine:
 
 
             # ── Part D: REINFORCE gradient update ────────────────────
-            rew_std = rewards.std().clamp(min=0.1)
-            adv     = (rewards - rewards.mean()) / (rew_std + 1e-5)
+            # Fix 3: EMA baseline 替代 batch mean，避免全负 batch 的相对优选问题
+            batch_mean = rewards.mean().item()
+            batch_std  = rewards.std().clamp(min=0.1)
+            if ModelConfig.REWARD_EMA_BASELINE and self._reward_ema_step >= ModelConfig.REWARD_EMA_WARMUP:
+                baseline = self._reward_ema
+                adv = (rewards - baseline) / (batch_std + 1e-5)
+            else:
+                adv = (rewards - batch_mean) / (batch_std + 1e-5)
+            # 更新 EMA
+            if self._reward_ema is None:
+                self._reward_ema = batch_mean
+            else:
+                self._reward_ema = ModelConfig.REWARD_EMA_DECAY * self._reward_ema + (1.0 - ModelConfig.REWARD_EMA_DECAY) * batch_mean
+            self._reward_ema_step += 1
             adv_new   = adv[:n_new]
             adv_elite = adv[n_new:]
 
@@ -697,7 +713,14 @@ class AlphaEngine:
             ent_coeff = ModelConfig.ENTROPY_COEFF_MAX / (
                 (1.0 + ent_val) ** ModelConfig.ENTROPY_COEFF_POWER
             )
-            loss = policy_loss - ent_coeff * mean_ent
+            # Fix 1: 熵下限惩罚——当 H < threshold 时加入固定惩罚，确保探索压力不归零
+            ent_floor_loss = torch.zeros(1, device=ModelConfig.DEVICE)
+            if ModelConfig.ENTROPY_FLOOR and ent_val < ModelConfig.ENTROPY_FLOOR_THRESH:
+                floor_gap = ModelConfig.ENTROPY_FLOOR_THRESH - ent_val
+                ent_floor_loss = ModelConfig.ENTROPY_FLOOR_LAMBDA * torch.tensor(
+                    floor_gap, device=ModelConfig.DEVICE, dtype=mean_ent.dtype
+                )
+            loss = policy_loss - ent_coeff * mean_ent + ent_floor_loss
 
             self.opt.zero_grad()
             loss.backward()
@@ -813,7 +836,22 @@ class AlphaEngine:
                 if self._restart_count < max_r:
                     self._restart_count  += 1
                     low_entropy_streak    = 0
-                    if self._best_snapshot is not None:
+
+                    # Fix 2: 每 N 次重启做一次完全随机初始化，逃离 best_snapshot 吸引子
+                    do_full_reset = (self._restart_count % ModelConfig.FULL_RESET_EVERY == 0)
+
+                    if do_full_reset:
+                        # 完全重新初始化模型参数
+                        for layer in self.model.modules():
+                            if hasattr(layer, 'reset_parameters'):
+                                layer.reset_parameters()
+                        tqdm.write(
+                            f"[Restart {self._restart_count}/{max_r} @ step {step}] "
+                            f"mode=FULL_RESET (escaped best_snapshot attractor) "
+                            f"stagnation={self._stagnation_steps} "
+                            f"H={ent_val:.3f}"
+                        )
+                    elif self._best_snapshot is not None:
                         self.model.load_state_dict(self._best_snapshot)
                         with torch.no_grad():
                             if ModelConfig.PARTIAL_RESET:

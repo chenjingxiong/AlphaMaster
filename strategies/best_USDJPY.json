@@ -1,0 +1,17 @@
+{
+  "vocab_version": "v71336c7c7b25",
+  "symbol": "USDJPY",
+  "group": "forex_smoke",
+  "formula": [
+    26,
+    23,
+    21,
+    51,
+    40,
+    75,
+    47,
+    89
+  ],
+  "best_score": -0.030277235433459282,
+  "source": "group_forex_smoke"
+}
