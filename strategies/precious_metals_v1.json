@@ -1,0 +1,56 @@
+{
+  "name": "precious_metals_v1",
+  "version": "2026-07-06",
+  "vocab_version": "v9217a2c0d91a",
+  "status": "verified",
+  "formula_tokens": [
+    48,
+    42,
+    94,
+    42,
+    25,
+    103,
+    86,
+    126
+  ],
+  "formula_readable": "DMI_ADX_14 -> KYLE_LAMBDA -> EMA_20 -> KYLE_LAMBDA -> MFI14 -> SCALE -> TS_CORR_10 -> IF_GT",
+  "formula_operators": [
+    "DMI_ADX_14",
+    "KYLE_LAMBDA",
+    "EMA_20",
+    "KYLE_LAMBDA",
+    "MFI14",
+    "SCALE",
+    "TS_CORR_10",
+    "IF_GT"
+  ],
+  "train_best_score": 0.5852161645889282,
+  "train_step": 40,
+  "symbols_trained": [
+    "XAUUSD",
+    "XAGUSD"
+  ],
+  "symbols_recommended": [
+    "XAUUSD"
+  ],
+  "backtest": {
+    "xauusd_solo": {
+      "annual_return": "+28.2%",
+      "sharpe": 2.66,
+      "max_drawdown": "-11%",
+      "win_rate": "55.4%",
+      "turnover": "109 trades/year",
+      "data": "8.0 years, 50,000 H1 bars"
+    },
+    "precious_metals_dual": {
+      "annual_return": "+33.2%",
+      "sharpe": 2.39,
+      "oos_total_pnl": "+1.99 (3/4 folds profitable)",
+      "note": "XAUUSD -24.9% / XAGUSD +58.1%"
+    }
+  },
+  "logic": {
+    "summary": "微型市场体制切换模型",
+    "detail": "用Kyle Lambda与MFI14的10期相关性判断市场体制: corr>0=流动性驱动行情用Kyle惯性, corr<=0=流动性紊乱退守趋势强度"
+  }
+}

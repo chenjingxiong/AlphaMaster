@@ -838,7 +838,11 @@ class AlphaEngine:
                     low_entropy_streak    = 0
 
                     # Fix 2: 每 N 次重启做一次完全随机初始化，逃离 best_snapshot 吸引子
-                    do_full_reset = (self._restart_count % ModelConfig.FULL_RESET_EVERY == 0)
+                    # 深度坍塌 (H < 0.3) 时强制 full reset，不给 best_snapshot 恢复的机会
+                    do_full_reset = (
+                        self._restart_count % ModelConfig.FULL_RESET_EVERY == 0
+                        or ent_val < 0.3
+                    )
 
                     if do_full_reset:
                         # 完全重新初始化模型参数

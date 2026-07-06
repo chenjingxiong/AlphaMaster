@@ -64,16 +64,16 @@ class ModelConfig:
     #   （ln(131)≈4.87 vs ln(54)≈3.99），绝对阈值 0.5 不再合理。
     # ENTROPY_COLLAPSE_STEPS 15→40：给模型更长的自我恢复窗口，不急于重启。
     ENTROPY_COEFF_MAX:   float = 1.0
-    ENTROPY_COEFF_POWER: float = 1.3
+    ENTROPY_COEFF_POWER: float = 1.0  # 降低幂次，让低熵时系数更激进（原1.3）
     ENTROPY_COLLAPSE_THRESH: float = 0.15 * math.log(FORMULA_VOCAB.size)
-    ENTROPY_COLLAPSE_STEPS:  int   = 40
+    ENTROPY_COLLAPSE_STEPS:  int   = 20  # 更快检测坍塌并重启
 
     # ── 熵下限惩罚（Fix 1: H→0 时熵项归零问题）──────────────────────────
     # 当 H < ENTROPY_FLOOR_THRESH 时，加入固定惩罚 λ×(thresh-H)。
     # 这确保即使 mean_ent→0，loss 中仍有非零探索压力。
     ENTROPY_FLOOR:        bool  = True
-    ENTROPY_FLOOR_THRESH: float = 0.5   # 熵低于此值时触发固定惩罚
-    ENTROPY_FLOOR_LAMBDA: float = 2.0   # 惩罚强度系数
+    ENTROPY_FLOOR_THRESH: float = 1.0   # 熵低于此值时触发固定惩罚（提高介入时机）
+    ENTROPY_FLOOR_LAMBDA: float = 5.0   # 惩罚强度系数（加大力度对抗坍塌）
 
     # ── Elite Replay ──────────────────────────────────────────────────
     ELITE_REPLAY_FRAC:  float = 0.25

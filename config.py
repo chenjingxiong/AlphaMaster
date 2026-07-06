@@ -46,8 +46,11 @@ class Config:
     SYMBOLS   = [
         # 外汇
         "EURUSD", "USDJPY",
-        # 贵金属 + 大宗商品
-        "XAUUSD", "AAVUSD", "COCOA.c",
+        # 贵金属
+        "XAUUSD", "XAGUSD",
+        # AAVUSD 已移除：实为 Aave 加密货币，非大宗商品。波动特征与贵金属完全不匹配。
+        # COCOA.c 已移除：大宗商品期货，日交易~10h，时间对齐后仅8546 bar，
+        # 拖累整组数据量，且流动性/交易时段与贵金属不匹配。
         # 美国指数
         "US30.cash", "US100.cash", "US500.cash", "US2000.cash",
         # 其他指数
@@ -56,9 +59,9 @@ class Config:
 
     # 相关性分组（用于分组训练）
     SYMBOL_GROUPS = {
-        "forex":      ["EURUSD", "USDJPY"],
-        "metals_comm":["XAUUSD", "AAVUSD", "COCOA.c"],
-        "index":      ["US30.cash", "US100.cash", "US500.cash", "US2000.cash", "JP225.cash"],
+        "forex":          ["EURUSD", "USDJPY"],
+        "precious_metals":["XAUUSD", "XAGUSD"],   # 贵金属（黄金+白银，8.3年对齐）
+        "index":          ["US30.cash", "US100.cash", "US500.cash", "US2000.cash", "JP225.cash"],
     }
 
     # FEATURE_SYMBOLS：用于计算截面特征的宽品种集

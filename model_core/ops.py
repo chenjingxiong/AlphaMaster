@@ -261,13 +261,18 @@ def _ts_product(x: torch.Tensor, d: int) -> torch.Tensor:
     x_safe = torch.clamp(x, -0.999, None)
     log_x = torch.log1p(x_safe)
     w = _ts_rolling(log_x, d)
-    out = torch.expm1(w.sum(dim=-1))
+    # clamp 对数累加和防止 expm1 溢出到 float32 边界（>1e38）
+    log_sum = w.sum(dim=-1).clamp(-10.0, 10.0)
+    out = torch.expm1(log_sum)
     return torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def _signed_power(x: torch.Tensor, a: float = 2.0) -> torch.Tensor:
     """带符号乘方: sign(x) * |x|^a。Alpha#001 SignedPower。保留符号同时放大极端值。"""
-    return torch.sign(x) * torch.abs(x) ** a
+    out = torch.sign(x) * torch.abs(x) ** a
+    # 防溢出：|x|^a 在链式调用中可能爆炸到 float32 边界（如 3.3e38），
+    # 导致后续 mean/std 计算溢出为 inf。clamp 到安全范围。
+    return torch.nan_to_num(out.clamp(-1e9, 1e9), nan=0.0, posinf=0.0, neginf=0.0)
 
 
 # ── Cross_Sectional 算子 helper（沿 N 维，每时间步跨品种；R2.1, R2.2）───────
