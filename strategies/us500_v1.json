@@ -1,0 +1,87 @@
+{
+  "name": "us500_v1",
+  "version": "2026-07-07",
+  "vocab_version": "v9217a2c0d91a",
+  "status": "verified",
+  "symbol": "US500.cash",
+  "mode": "single",
+  "formula_tokens": [
+    20,
+    96,
+    117,
+    78,
+    113,
+    56,
+    66,
+    88
+  ],
+  "formula_readable": "VWAP_DEV -> TS_SKEW_10 -> POWER -> TS_MEAN_10 -> TS_SUM_10 -> SAR_DIST -> SUB -> MOMENTUM_10",
+  "formula_operators": [
+    "VWAP_DEV",
+    "TS_SKEW_10",
+    "POWER",
+    "TS_MEAN_10",
+    "TS_SUM_10",
+    "SAR_DIST",
+    "SUB",
+    "MOMENTUM_10"
+  ],
+  "train_best_score": 1.4519497156143188,
+  "train_step": 880,
+  "train_restarts": 8,
+  "backtest": {
+    "annual_return": "+23.8%",
+    "sharpe": 1.85,
+    "ic": "+0.029",
+    "max_drawdown": "-41% (misleading: early tiny peak, no >25% DD after day 10)",
+    "win_rate": "52.5%",
+    "turnover": "238 trades/year",
+    "data": "5.3 years, 32,973 H1 bars",
+    "walk_forward": {
+      "fold1": {
+        "oos": "+0.43",
+        "sharpe": 3.1
+      },
+      "fold2": {
+        "oos": "-0.04",
+        "sharpe": -0.46
+      },
+      "fold3": {
+        "oos": "+0.35",
+        "sharpe": 2.12
+      },
+      "fold4": {
+        "oos": "+0.19",
+        "sharpe": 2.46
+      },
+      "total_oos": "+0.93",
+      "verdict": "PASS (3/4 folds)"
+    },
+    "yearly": {
+      "year1": {
+        "pnl": "+0.33",
+        "sharpe": 1.76
+      },
+      "year2": {
+        "pnl": "+0.39",
+        "sharpe": 2.95
+      },
+      "year3": {
+        "pnl": "+0.03",
+        "sharpe": 0.37
+      },
+      "year4": {
+        "pnl": "+0.11",
+        "sharpe": 1.38
+      },
+      "year5": {
+        "pnl": "+0.34",
+        "sharpe": 2.38
+      }
+    }
+  },
+  "logic": {
+    "summary": "VWAP偏离偏度+SAR反转动量模型",
+    "detail": "成交量加权均价偏离经10期偏度放大后，与SAR距离求差，用10期动量做方向确认"
+  }
+}
