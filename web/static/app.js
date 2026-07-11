@@ -14,6 +14,8 @@ let lastDebugViewContent = "";
 let currentPage = "train";
 let btActive = false;
 let btBuster = "";      // 图表缓存刷新键（用 job 时间戳）
+let btPortfolioSig = ""; // 绩效卡签名：变化时才重建 + 播放数字动画，避免每次轮询重播
+let lastEquityData = null; // 最近一次资金曲线数据，供绩效卡 sparkline 复用
 let lastTrainingActive = false;
 
 const $ = (id) => document.getElementById(id);
@@ -264,9 +266,8 @@ function updateFileProgress(progress) {
 }
 
 const CHART_SERIES = [
-  { key: "best_score", label: "最优分数", borderColor: "#5eead4", fillRGB: "94, 234, 212", yAxisID: "y" },
-  { key: "val_score", label: "验证分数", borderColor: "#818cf8", fillRGB: "129, 140, 248", yAxisID: "y" },
-  { key: "entropy", label: "策略熵", borderColor: "#fbbf24", fillRGB: "251, 191, 36", yAxisID: "y1" },
+  { key: "best_score", label: "最优分数", borderColor: "#34f5c8", fillRGB: "52, 245, 200", yAxisID: "y" },
+  { key: "val_score", label: "验证分数", borderColor: "#38bdf8", fillRGB: "56, 189, 248", yAxisID: "y" },
 ];
 
 // 让曲线在填充区形成竖向渐变
@@ -338,15 +339,10 @@ const CHART_OPTIONS = {
       border: { color: "rgba(120,190,235,0.12)" },
     },
     y: {
+      title: { display: true, text: "分数（最优 / 验证）", color: "#7dd3fc", font: { family: "'DM Sans'", size: 10, weight: "600" } },
       ticks: { color: "#6b7d92", font: { family: "'JetBrains Mono'", size: 10 } },
       grid: { color: "rgba(120,190,235,0.05)" },
       border: { color: "rgba(120,190,235,0.12)" },
-    },
-    y1: {
-      position: "right",
-      ticks: { color: "#fbbf24", font: { family: "'JetBrains Mono'", size: 10 } },
-      grid: { drawOnChartArea: false },
-      border: { color: "rgba(251,191,36,0.2)" },
     },
   },
 };
@@ -626,7 +622,7 @@ function updateAiChannelHint() {
 
   if (resolved.provider === "deepseek") {
     if (headHint) headHint.textContent = "DeepSeek · deepseek-v4-flash";
-    hint.textContent = "当前：DeepSeek（deepseek-v4-flash · https://api.deepseek.com）。也可在 Key 中输入 openclaw 或 openclaw_wb。";
+    hint.textContent = "当前：DeepSeek（deepseek-v4-flash · https://api.deepseek.com）。";
   } else if (resolved.provider === "openclaw") {
     if (headHint) headHint.textContent = row?.available ? "openclaw (QClaw) · 已匹配" : "openclaw (QClaw) · 未就绪";
     hint.textContent = row?.hint || "已匹配 openclaw：将自动使用本地 QClaw token。";
@@ -975,7 +971,7 @@ async function stopTraining() {
 // 分页切换
 // ═══════════════════════════════════════════════════════════════════
 function switchPage(page) {
-  if (page !== "train" && page !== "backtest") return;
+  if (page !== "train" && page !== "backtest" && page !== "realtime") return;
   currentPage = page;
   document.querySelectorAll(".stepper .step").forEach((s) => {
     s.classList.toggle("active", s.dataset.page === page);
@@ -986,6 +982,9 @@ function switchPage(page) {
   if (page === "backtest") {
     loadBacktestStrategyContext();
     refreshBacktest();
+  } else if (page === "realtime") {
+    initRealtimeOnce();
+    refreshRealtime();
   }
 }
 
@@ -1092,12 +1091,15 @@ async function refreshBacktestReport() {
   }
   if (!data.available || !data.report) {
     if ($("btPortfolioHint")) $("btPortfolioHint").textContent = "尚未运行回测";
+    lastEquityData = null;
+    btPortfolioSig = "";
     renderEquity(null);
     return;
   }
+  // 先取资金曲线（写入 lastEquityData），再渲染绩效卡，让 sparkline 用上真实数据
+  await refreshEquityCurve();
   renderPortfolio(data.report);
   renderBacktestTable(data.report.symbols || {});
-  await refreshEquityCurve();
 }
 
 async function refreshEquityCurve() {
@@ -1107,10 +1109,98 @@ async function refreshEquityCurve() {
     : "/api/backtest/equity";
   try {
     const data = await fetchJSON(url);
+    lastEquityData = data?.available ? data.data : null;
     renderEquity(data);
   } catch (_) {
+    lastEquityData = null;
     renderEquity(null);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 迷你 sparkline + 数字滚动动画（终端仪表盘质感）
+// ═══════════════════════════════════════════════════════════════════
+const METRIC_FMT = {
+  pct: (v) => (v >= 0 ? "+" : "") + (v * 100).toFixed(2) + "%",
+  signed: (v) => (v >= 0 ? "+" : "") + v.toFixed(3),
+  ratio: (v) => v.toFixed(3),
+  int: (v) => Math.round(v).toLocaleString(),
+  winrate: (v) => (v * 100).toFixed(1) + "%",
+  strength: (v) => Math.round(v * 100) + "%",
+};
+
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+// 短促 count-up（≈420ms, easeOutCubic），克制不浮夸
+function animateCount(el, to, fmt) {
+  const fn = METRIC_FMT[fmt] || ((v) => String(v));
+  if (!Number.isFinite(to)) {
+    el.textContent = "—";
+    return;
+  }
+  if (prefersReducedMotion()) {
+    el.textContent = fn(to);
+    return;
+  }
+  const dur = 420;
+  const t0 = performance.now();
+  function frame(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    el.textContent = fn(to * e);
+    if (p < 1) requestAnimationFrame(frame);
+    else el.textContent = fn(to);
+  }
+  requestAnimationFrame(frame);
+}
+
+function runCountUp(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-count]").forEach((el) => {
+    animateCount(el, parseFloat(el.dataset.count), el.dataset.fmt || "");
+  });
+}
+
+// 均匀降采样为 <= target 个有限点
+function downsampleSeries(arr, target) {
+  const clean = (arr || [])
+    .map(Number)
+    .filter((v) => Number.isFinite(v));
+  if (clean.length <= target) return clean;
+  const out = [];
+  const step = (clean.length - 1) / (target - 1);
+  for (let i = 0; i < target; i++) out.push(clean[Math.round(i * step)]);
+  return out;
+}
+
+// 生成极小趋势微线（内联 SVG，轻量、清晰）
+function sparklineSVG(values, { color = "#5eead4", fillRGB = null, w = 74, h = 22 } = {}) {
+  const v = downsampleSeries(values, 56);
+  if (v.length < 2) return "";
+  const min = Math.min(...v);
+  const max = Math.max(...v);
+  const range = max - min || 1;
+  const n = v.length;
+  const x = (i) => (i / (n - 1)) * w;
+  const y = (val) => h - 2 - ((val - min) / range) * (h - 4);
+  const line = "M" + v.map((val, i) => `${x(i).toFixed(1)} ${y(val).toFixed(1)}`).join(" L ");
+  const area = fillRGB
+    ? `<path d="${line} L ${w} ${h} L 0 ${h} Z" fill="rgba(${fillRGB},0.14)" stroke="none"/>`
+    : "";
+  const dot = `<circle cx="${x(n - 1).toFixed(1)}" cy="${y(v[n - 1]).toFixed(1)}" r="1.6" fill="${color}"/>`;
+  return `<svg class="spark-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${area}<path d="${line}" fill="none" stroke="${color}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>${dot}</svg>`;
+}
+
+// 取当前主资金曲线序列（组合优先，否则第一个品种）
+function mainEquitySeries() {
+  const d = lastEquityData;
+  if (!d) return null;
+  if (d.portfolio) return d.portfolio;
+  const syms = d.symbols || {};
+  const names = Object.keys(syms);
+  return names.length ? syms[names[0]] : null;
 }
 
 function renderPortfolio(report) {
@@ -1122,38 +1212,55 @@ function renderPortfolio(report) {
 
   if (!Object.keys(p).length) {
     grid.innerHTML = '<div class="metric-empty">回测结果无绩效数据</div>';
+    btPortfolioSig = "";
     return;
   }
 
-  const plSrc = symData?.profit_loss_ratio ?? p.profit_loss_ratio;
-  const plNum = Number(plSrc);
-  const plText = Number.isFinite(plNum) ? plNum.toFixed(3) : "—";
+  const plNum = Number(symData?.profit_loss_ratio ?? p.profit_loss_ratio);
+  const nTrades = symData?.n_trades ?? p.n_trades;
+  const winRate = symData?.win_rate;
+
+  // sparkline 数据源：主资金曲线 + 滚动夏普
+  const eq = mainEquitySeries();
+  const posColor = p.total_return >= 0 ? "#4ade80" : "#f87171";
+  const posRGB = p.total_return >= 0 ? "74, 222, 128" : "248, 113, 113";
+  const equitySpark = eq ? sparklineSVG(eq.equity, { color: posColor, fillRGB: posRGB }) : "";
+  const rollSpark = eq ? sparklineSVG(eq.rolling_sharpe, { color: "#5eead4", fillRGB: "94, 234, 212" }) : "";
+
   const cards = [
-    { label: "总收益", value: fmtPct(p.total_return), cls: p.total_return >= 0 ? "pos" : "neg" },
-    { label: "Sharpe", value: fmtSigned(p.sharpe), cls: "accent" },
-    { label: "Sortino", value: fmtSigned(p.sortino), cls: "accent" },
-    { label: "盈亏比", value: plText, cls: Number.isFinite(plNum) ? "accent" : "" },
-    {
-      label: "交易数",
-      value: symData?.n_trades ?? p.n_trades ?? "—",
-      cls: "",
-    },
-    {
-      label: "胜率",
-      value: symData?.win_rate != null ? (symData.win_rate * 100).toFixed(1) + "%" : "—",
-      cls: "",
-    },
+    { label: "总收益", raw: p.total_return, fmt: "pct", cls: p.total_return >= 0 ? "pos" : "neg", spark: equitySpark },
+    { label: "Sharpe", raw: p.sharpe, fmt: "signed", cls: "accent", spark: rollSpark },
+    { label: "Sortino", raw: p.sortino, fmt: "signed", cls: "accent", spark: rollSpark },
+    { label: "盈亏比", raw: Number.isFinite(plNum) ? plNum : null, fmt: "ratio", cls: Number.isFinite(plNum) ? "accent" : "" },
+    { label: "交易数", raw: Number.isFinite(Number(nTrades)) ? Number(nTrades) : null, fmt: "int", cls: "" },
+    { label: "胜率", raw: winRate != null ? Number(winRate) : null, fmt: "winrate", cls: "" },
   ];
 
+  // 签名守卫：数值/焦点/资金曲线未变则不重建，避免每次轮询重播动画
+  const sig = [focus, btEquitySig, ...cards.map((c) => c.raw)].join("|");
+  if (sig === btPortfolioSig) {
+    if ($("btPortfolioHint")) $("btPortfolioHint").textContent = focus ? `${focus} 回测绩效` : "回测绩效";
+    return;
+  }
+  btPortfolioSig = sig;
+
   grid.innerHTML = cards
-    .map(
-      (c) => `
-    <div class="metric-card ${c.cls === "pos" || c.cls === "neg" ? c.cls : ""}">
+    .map((c) => {
+      const cardCls = c.cls === "pos" || c.cls === "neg" ? c.cls : "";
+      const finite = c.raw != null && Number.isFinite(c.raw);
+      const finalText = finite ? METRIC_FMT[c.fmt](c.raw) : "—";
+      const countAttr = finite ? ` data-count="${c.raw}" data-fmt="${c.fmt}"` : "";
+      const spark = c.spark ? `<div class="metric-spark">${c.spark}</div>` : "";
+      return `
+    <div class="metric-card ${cardCls}">
       <div class="metric-label">${c.label}</div>
-      <div class="metric-value ${c.cls}">${c.value}</div>
-    </div>`
-    )
+      <div class="metric-value ${c.cls}"${countAttr}>${finalText}</div>
+      ${spark}
+    </div>`;
+    })
     .join("");
+
+  runCountUp(grid);
 
   if ($("btPortfolioHint")) {
     $("btPortfolioHint").textContent = focus ? `${focus} 回测绩效` : "回测绩效";
@@ -1319,28 +1426,34 @@ function renderEquityStats(name, series) {
       break;
     }
   }
+  const plNum = Number(pl);
   const cards = [
-    { label: "总收益", value: fmtPct(series.total_return), cls: series.total_return >= 0 ? "pos" : "neg" },
-    { label: "夏普", value: fmtSigned(series.sharpe), cls: "accent" },
-    { label: "索提诺", value: fmtSigned(series.sortino), cls: "accent" },
-    { label: "盈亏比", value: plText, cls: "accent" },
+    { label: "总收益", raw: series.total_return, fmt: "pct", cls: series.total_return >= 0 ? "pos" : "neg" },
+    { label: "夏普", raw: series.sharpe, fmt: "signed", cls: "accent" },
+    { label: "索提诺", raw: series.sortino, fmt: "signed", cls: "accent" },
+    { label: "盈亏比", raw: Number.isFinite(plNum) ? plNum : null, fmt: "ratio", cls: "accent" },
     {
       label: "最新滚动夏普",
-      value: lastRoll != null ? fmtSigned(lastRoll) : "—",
+      raw: lastRoll,
+      fmt: "signed",
       cls: lastRoll == null ? "" : lastRoll >= 0 ? "accent" : "neg",
     },
   ];
   el.innerHTML =
     `<span class="equity-stat-name">${name}</span>` +
     cards
-      .map(
-        (c) => `
+      .map((c) => {
+        const finite = c.raw != null && Number.isFinite(c.raw);
+        const finalText = finite ? METRIC_FMT[c.fmt](c.raw) : "—";
+        const countAttr = finite ? ` data-count="${c.raw}" data-fmt="${c.fmt}"` : "";
+        return `
       <div class="equity-stat">
         <span class="equity-stat-label">${c.label}</span>
-        <span class="equity-stat-value ${c.cls}">${c.value}</span>
-      </div>`
-      )
+        <span class="equity-stat-value ${c.cls}"${countAttr}>${finalText}</span>
+      </div>`;
+      })
       .join("");
+  runCountUp(el);
 }
 
 function buildEquityChart(labels, symbols, portfolio) {
@@ -1504,11 +1617,290 @@ async function stopBacktest() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// 实时行情分析（信号雷达）
+// ═══════════════════════════════════════════════════════════════════
+let rtInited = false;
+let rtEngineRunning = false;
+let rtSources = [];
+let rtSourceById = {};
+let rtImportedStrategy = null; // {path, name}
+let rtGridSig = "";
+
+const RT_DIR = {
+  LONG: { label: "↑ 预期上涨", cls: "rt-long", color: "#4ade80" },
+  SHORT: { label: "↓ 预期下跌", cls: "rt-short", color: "#f87171" },
+  FLAT: { label: "— 无信号", cls: "rt-flat", color: "#7a8a9e" },
+};
+const RT_STATE_LABEL = {
+  pending: "等待首次计算",
+  ok: "运行中",
+  insufficient: "历史不足",
+  error: "错误",
+};
+
+function escHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
+  );
+}
+
+function rtClock(ts) {
+  if (!ts) return "—";
+  return new Date(ts * 1000).toLocaleTimeString();
+}
+
+async function initRealtimeOnce() {
+  if (rtInited) return;
+  rtInited = true;
+  try {
+    const data = await fetchJSON("/api/realtime/sources");
+    rtSources = data.sources || [];
+    rtSourceById = {};
+    rtSources.forEach((s) => (rtSourceById[s.id] = s));
+    const sel = $("rtSourceSelect");
+    if (sel) {
+      sel.innerHTML = rtSources
+        .map((s) => `<option value="${s.id}">${escHtml(s.label)}${s.available ? "" : " · 未就绪"}</option>`)
+        .join("");
+    }
+    if (data.min_exposure != null && $("rtThresholdHint")) {
+      $("rtThresholdHint").textContent = `无信号阈值 |tanh(因子)| < ${data.min_exposure}`;
+    }
+    onRtSourceChange();
+  } catch (e) {
+    await logClientError("加载数据源失败: " + e.message);
+  }
+  await loadRtStrategies();
+}
+
+async function loadRtStrategies() {
+  const sel = $("rtStrategySelect");
+  if (!sel) return;
+  let rows = [];
+  try {
+    const data = await fetchJSON("/api/realtime/strategies");
+    rows = data.strategies || [];
+  } catch (_) {}
+  const opts = ['<option value="">— 选择已保存策略 —</option>'];
+  if (rtImportedStrategy) {
+    opts.push(`<option value="${escHtml(rtImportedStrategy.path)}">导入: ${escHtml(rtImportedStrategy.name)}</option>`);
+  }
+  rows.forEach((r) => {
+    const score = r.best_score != null ? Number(r.best_score).toFixed(3) : "—";
+    const tf = r.timeframe ? ` ${r.timeframe}` : "";
+    opts.push(`<option value="${escHtml(r.strategy_file)}">${escHtml(r.symbol)}${tf} · 分数 ${score}</option>`);
+  });
+  const prev = sel.value;
+  sel.innerHTML = opts.join("");
+  if (rtImportedStrategy) sel.value = rtImportedStrategy.path;
+  else if (prev) sel.value = prev;
+  onRtStrategyChange();
+}
+
+function onRtSourceChange() {
+  const src = rtSourceById[$("rtSourceSelect")?.value];
+  const tfSel = $("rtTimeframeSelect");
+  const presets = $("rtSymbolPresets");
+  const hint = $("rtSourceHint");
+  if (!src) return;
+  if (tfSel) {
+    const cur = tfSel.value;
+    tfSel.innerHTML = (src.timeframes || []).map((t) => `<option value="${t}">${t}</option>`).join("");
+    if (src.timeframes && src.timeframes.includes(cur)) tfSel.value = cur;
+    else if (src.timeframes && src.timeframes.includes("1h")) tfSel.value = "1h";
+  }
+  if (presets) {
+    presets.innerHTML = (src.presets || []).map((s) => `<option value="${escHtml(s)}"></option>`).join("");
+  }
+  if (hint) {
+    hint.textContent = `${src.label}：${src.hint || ""}`;
+    hint.classList.toggle("bad", !src.available);
+  }
+}
+
+function onRtStrategyChange() {
+  const sel = $("rtStrategySelect");
+  const picked = $("rtStrategyPicked");
+  if (!sel || !picked) return;
+  const opt = sel.options[sel.selectedIndex];
+  picked.textContent = sel.value
+    ? `因子来源：${opt ? opt.textContent : sel.value}。信号取最后已收盘 bar。`
+    : "因子来源：从已保存策略下拉选择，或「导入策略」选本地 JSON。信号取最后已收盘 bar。";
+}
+
+async function rtBrowseStrategy() {
+  try {
+    const res = await fetchJSON("/api/strategy-file/browse", { method: "POST" });
+    if (res.cancelled) return;
+    rtImportedStrategy = { path: res.strategy_file, name: res.filename || res.strategy_file };
+    await loadRtStrategies();
+  } catch (e) {
+    await logClientError("导入策略失败: " + e.message);
+  }
+}
+
+async function rtAddWatch() {
+  const source = $("rtSourceSelect")?.value;
+  const symbol = ($("rtSymbolInput")?.value || "").trim();
+  const timeframe = $("rtTimeframeSelect")?.value;
+  const strategy_file = $("rtStrategySelect")?.value;
+  const picked = $("rtStrategyPicked");
+  if (!symbol) {
+    if (picked) { picked.textContent = "请填写品种"; picked.classList.add("bad"); }
+    return;
+  }
+  if (!strategy_file) {
+    if (picked) { picked.textContent = "请选择或导入策略因子"; picked.classList.add("bad"); }
+    return;
+  }
+  const btn = $("rtAddBtn");
+  if (btn) btn.disabled = true;
+  try {
+    await fetchJSON("/api/realtime/watch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, symbol, timeframe, strategy_file }),
+    });
+    if (picked) picked.classList.remove("bad");
+    rtEngineRunning = true;
+    if ($("rtEngineToggle")) $("rtEngineToggle").checked = true;
+    rtGridSig = "";
+    await refreshRealtime();
+  } catch (e) {
+    if (picked) { picked.textContent = "添加失败: " + e.message; picked.classList.add("bad"); }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function rtRemoveWatch(id) {
+  try {
+    await fetchJSON("/api/realtime/unwatch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    rtGridSig = "";
+    await refreshRealtime();
+  } catch (e) {
+    await logClientError("移除监控失败: " + e.message);
+  }
+}
+
+async function rtToggleEngine(on) {
+  try {
+    await fetchJSON(`/api/realtime/${on ? "start" : "stop"}`, { method: "POST" });
+    rtEngineRunning = !!on;
+    await refreshRealtime();
+  } catch (e) {
+    await logClientError("引擎切换失败: " + e.message);
+  }
+}
+
+async function refreshRealtime() {
+  let st;
+  try {
+    st = await fetchJSON("/api/realtime/status");
+  } catch (_) {
+    return;
+  }
+  rtEngineRunning = !!st.running;
+  const toggle = $("rtEngineToggle");
+  if (toggle) toggle.checked = rtEngineRunning;
+  const hint = $("rtStatusHint");
+  if (hint) {
+    hint.textContent = st.count
+      ? `${rtEngineRunning ? "运行中" : "已暂停"} · ${st.count} 项 · ${new Date().toLocaleTimeString()}`
+      : (rtEngineRunning ? "运行中 · 无监控项" : "未启动");
+  }
+  renderRealtimeGrid(st.watches || []);
+}
+
+// 半环表盘（180° 上半环，值弧按强度填充）
+const RT_ARC_LEN = 150.8; // π * 48
+function halfRingGauge(strength, colorHex) {
+  const s = Math.max(0, Math.min(1, strength || 0));
+  const off = RT_ARC_LEN * (1 - s);
+  return `<svg class="rt-gauge-svg" viewBox="0 0 120 74" aria-hidden="true">
+    <path class="rt-gauge-track" d="M12 62 A 48 48 0 0 1 108 62" />
+    <path class="rt-gauge-val" d="M12 62 A 48 48 0 0 1 108 62"
+      style="stroke:${colorHex};stroke-dasharray:${RT_ARC_LEN};stroke-dashoffset:${off.toFixed(1)};" />
+  </svg>`;
+}
+
+function renderRealtimeGrid(watches) {
+  const grid = $("rtGrid");
+  if (!grid) return;
+  if (!watches.length) {
+    grid.innerHTML =
+      '<div class="metric-empty">尚无监控项。添加「数据源 + 品种 + 周期 + 因子」后开始实时分析。</div>';
+    rtGridSig = "";
+    return;
+  }
+
+  // 签名：只在信号相关字段变化时重建（避免每次轮询重播动画）
+  const sig = watches
+    .map((w) => [w.id, w.state, w.direction, w.strength, w.warn, w.message].join("~"))
+    .join("|");
+  if (sig === rtGridSig) return;
+  rtGridSig = sig;
+
+  grid.innerHTML = watches
+    .map((w) => {
+      const dir = w.state === "ok" ? RT_DIR[w.direction] || RT_DIR.FLAT : null;
+      const color = dir ? dir.color : "#7a8a9e";
+      const strength = w.state === "ok" ? w.strength || 0 : 0;
+      const dirLabel = dir ? dir.label : RT_STATE_LABEL[w.state] || w.state;
+      const dirCls = dir ? dir.cls : "rt-flat";
+      const srcLabel = (rtSourceById[w.source] || {}).label || w.source;
+      const factorText = w.factor_value != null ? Number(w.factor_value).toFixed(4) : "—";
+      const warn = w.warn ? `<div class="rt-warn" title="${escHtml(w.warn)}">⚠ ${escHtml(w.warn)}</div>` : "";
+      const msg =
+        w.state !== "ok" && w.message
+          ? `<div class="rt-msg">${escHtml(w.message)}</div>`
+          : "";
+      const strengthAttr =
+        w.state === "ok" ? ` data-count="${strength}" data-fmt="strength"` : "";
+      const strengthText = w.state === "ok" ? METRIC_FMT.strength(strength) : "—";
+      return `
+    <div class="rt-card ${dirCls}" data-id="${escHtml(w.id)}">
+      <button class="rt-remove" data-remove="${escHtml(w.id)}" title="移除监控">×</button>
+      <div class="rt-card-head">
+        <span class="rt-sym">${escHtml(w.symbol)}</span>
+        <span class="rt-tf">${escHtml(w.timeframe)}</span>
+        <span class="rt-src">${escHtml(srcLabel)}</span>
+      </div>
+      <div class="rt-gauge">
+        ${halfRingGauge(strength, color)}
+        <div class="rt-gauge-center">
+          <div class="rt-strength"${strengthAttr}>${strengthText}</div>
+          <div class="rt-dir ${dirCls}">${dirLabel}</div>
+        </div>
+      </div>
+      <div class="rt-meta">
+        <span class="rt-meta-item">因子 <b>${factorText}</b></span>
+        <span class="rt-meta-item">${escHtml(w.strategy_name)}</span>
+      </div>
+      <div class="rt-foot">
+        <span class="rt-state ${w.state}">${RT_STATE_LABEL[w.state] || w.state}</span>
+        <span class="rt-time">更新 ${rtClock(w.updated_at)}</span>
+      </div>
+      ${warn}
+      ${msg}
+    </div>`;
+    })
+    .join("");
+
+  runCountUp(grid);
+}
+
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
     refreshOverview();
     if (currentPage === "backtest" || btActive) refreshBacktest();
+    if (currentPage === "realtime" || rtEngineRunning) refreshRealtime();
   }, 4000);
 }
 
@@ -1552,6 +1944,19 @@ async function init() {
     el.addEventListener("input", updateBtCostHint);
     el.addEventListener("change", updateBtCostHint);
   });
+
+  // 实时分析控制
+  if ($("rtSourceSelect")) $("rtSourceSelect").addEventListener("change", onRtSourceChange);
+  if ($("rtStrategySelect")) $("rtStrategySelect").addEventListener("change", onRtStrategyChange);
+  if ($("rtBrowseStrategyBtn")) $("rtBrowseStrategyBtn").addEventListener("click", rtBrowseStrategy);
+  if ($("rtAddBtn")) $("rtAddBtn").addEventListener("click", rtAddWatch);
+  if ($("rtEngineToggle")) $("rtEngineToggle").addEventListener("change", (e) => rtToggleEngine(e.target.checked));
+  if ($("rtGrid")) {
+    $("rtGrid").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-remove]");
+      if (btn) rtRemoveWatch(btn.dataset.remove);
+    });
+  }
 
   startPolling();
 }

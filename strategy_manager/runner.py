@@ -40,7 +40,48 @@ from config import Config
 from data_pipeline.fetcher import MT5DataFetcher
 from data_pipeline.data_manager import MT5DataManager
 from execution.price_feed import MT5PriceFeed
-from execution.trader import MT5Trader
+try:
+    from execution.trader import MT5Trader
+except ImportError:
+    # execution/trader.py（真正下单的模块）已被移除：本项目不需要自动交易功能。
+    # 用占位类代替，保证 strategy_manager.runner 仍可被导入（训练/回测/测试依赖它），
+    # 但任何试图真正连接/下单的调用都会明确报错，而不是静默假装成功。
+    class MT5Trader:  # type: ignore[no-redef]
+        def __init__(self) -> None:
+            self._connected = False
+
+        def _unavailable(self, action: str):
+            raise RuntimeError(
+                f"execution.trader 已被移除（本项目不提供自动交易功能）："
+                f"无法执行 {action}。MT5StrategyRunner 仅可用于信号计算，不能实盘下单。"
+            )
+
+        def connect(self):
+            self._unavailable("connect()")
+
+        def close(self):
+            pass
+
+        def get_account_info(self):
+            return None
+
+        def get_positions(self, symbol=None, magic=None):
+            return []
+
+        def buy(self, symbol, lot):
+            self._unavailable("buy()")
+
+        def sell(self, symbol, lot):
+            self._unavailable("sell()")
+
+        def open_short(self, symbol, lot):
+            self._unavailable("open_short()")
+
+        def close_position(self, symbol, lot, direction, ticket=0):
+            self._unavailable("close_position()")
+
+        def close_all_positions(self, symbol, magic=None, *, filter_magic=True):
+            self._unavailable("close_all_positions()")
 from model_core.vm import StackVM
 from strategy_manager.portfolio import MT5PortfolioManager
 from strategy_manager.risk import MT5RiskEngine

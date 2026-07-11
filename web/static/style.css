@@ -1294,7 +1294,28 @@ td:nth-child(2) { color: var(--accent); font-family: var(--mono); }
   border: 1px solid var(--border-strong);
   overflow: hidden;
   min-width: 0;
+  min-height: 84px;
 }
+
+/* 右下角迷你趋势微线 */
+.metric-spark {
+  position: absolute;
+  right: 12px;
+  bottom: 9px;
+  width: 74px;
+  height: 22px;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.metric-spark .spark-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 4px rgba(94, 234, 212, 0.22));
+}
+
+.metric-card .metric-value { position: relative; z-index: 1; }
 
 .metric-card::before {
   content: "";
@@ -1652,4 +1673,235 @@ td:nth-child(2) { color: var(--accent); font-family: var(--mono); }
   border-radius: 10px;
   border: 1px solid var(--border-hover);
   box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.9);
+}
+
+/* ══════════════════════ 实时分析（信号雷达）══════════════════════ */
+.rt-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+.rt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.rt-field span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rt-field-wide { flex: 1 1 260px; }
+
+.rt-field select,
+.rt-field input[type="text"] {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  outline: none;
+  width: 100%;
+}
+
+.rt-field input[type="text"] { font-family: var(--mono); font-size: 0.85rem; }
+.rt-field select:focus,
+.rt-field input[type="text"]:focus { border-color: var(--accent); }
+
+.rt-actions { display: flex; gap: 10px; align-items: flex-end; }
+
+.rt-form-foot {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.rt-source-hint,
+.rt-thr-hint {
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  color: var(--text-muted);
+}
+
+.rt-source-hint.bad { color: var(--danger); }
+
+.rt-head-right { display: flex; align-items: center; gap: 14px; }
+
+.rt-engine-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.rt-engine-toggle input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+.rt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.rt-card {
+  position: relative;
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(14, 20, 31, 0.9), rgba(10, 15, 24, 0.6));
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.rt-card.rt-long {
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: inset 0 0 26px rgba(74, 222, 128, 0.07), 0 0 20px -8px rgba(74, 222, 128, 0.3);
+}
+.rt-card.rt-short {
+  border-color: rgba(248, 113, 113, 0.4);
+  box-shadow: inset 0 0 26px rgba(248, 113, 113, 0.07), 0 0 20px -8px rgba(248, 113, 113, 0.3);
+}
+.rt-card.rt-flat { border-color: var(--border-strong); }
+
+.rt-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(14, 20, 31, 0.7);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 3;
+  transition: color 0.15s, border-color 0.15s;
+}
+.rt-remove:hover { color: var(--danger); border-color: rgba(248, 113, 113, 0.5); }
+
+.rt-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.rt-card-head .rt-sym {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.98rem;
+  color: var(--accent);
+  text-shadow: 0 0 12px var(--accent-glow);
+}
+.rt-card-head .rt-tf {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text);
+  padding: 1px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: rgba(14, 20, 31, 0.7);
+}
+.rt-card-head .rt-src { font-size: 0.7rem; color: var(--text-muted); margin-left: auto; }
+
+.rt-gauge {
+  position: relative;
+  height: 92px;
+  margin: 2px 0 6px;
+}
+.rt-gauge-svg { display: block; width: 100%; height: 100%; }
+
+.rt-gauge-track {
+  fill: none;
+  stroke: rgba(120, 190, 235, 0.12);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+.rt-gauge-val {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 5px currentColor);
+  transition: stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rt-gauge-center {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  text-align: center;
+}
+.rt-strength {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+.rt-dir {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.rt-dir.rt-long { color: var(--success); }
+.rt-dir.rt-short { color: var(--danger); }
+.rt-dir.rt-flat { color: var(--text-muted); }
+
+.rt-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+.rt-meta-item { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-meta-item b { color: var(--text); font-weight: 600; }
+
+.rt-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.68rem;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.rt-state.ok { color: var(--success); }
+.rt-state.error { color: var(--danger); }
+.rt-state.insufficient { color: var(--warn); }
+
+.rt-warn {
+  margin-top: 8px;
+  font-size: 0.68rem;
+  color: var(--warn);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.rt-msg {
+  margin-top: 8px;
+  font-size: 0.68rem;
+  color: #f0c4c4;
+  line-height: 1.4;
 }

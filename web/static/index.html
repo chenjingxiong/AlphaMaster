@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=14" />
+  <link rel="stylesheet" href="/static/style.css?v=16" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -57,6 +57,14 @@
           <span class="step-sub">资金曲线 · 绩效评估</span>
         </span>
       </button>
+      <span class="step-link"></span>
+      <button type="button" class="step" data-page="realtime">
+        <span class="step-index">03</span>
+        <span class="step-body">
+          <span class="step-title">实时分析</span>
+          <span class="step-sub">信号雷达 · 多品种并发</span>
+        </span>
+      </button>
     </nav>
 
     <!-- ══════════════ 步骤一：训练页 ══════════════ -->
@@ -99,24 +107,17 @@
           <summary>指标说明</summary>
           <ul class="metrics-list">
             <li>
-              <span class="metric-swatch" style="--swatch: #5eead4"></span>
+              <span class="metric-swatch" style="--swatch: #34f5c8"></span>
               <div>
                 <strong>最优分数</strong>
                 <p>到目前为止找到的最好因子公式得分，越高表示回测表现越好，曲线阶梯上升说明发现了更优公式。</p>
               </div>
             </li>
             <li>
-              <span class="metric-swatch" style="--swatch: #818cf8"></span>
+              <span class="metric-swatch" style="--swatch: #38bdf8"></span>
               <div>
                 <strong>验证分数</strong>
                 <p>当前这一步在验证集上的平均得分，反映近期一批公式的整体质量，会有起伏属正常。</p>
-              </div>
-            </li>
-            <li>
-              <span class="metric-swatch" style="--swatch: #fbbf24"></span>
-              <div>
-                <strong>策略熵</strong>
-                <p>模型生成公式时的探索随机程度。偏高说明还在广泛尝试，逐渐走低说明策略趋于固定。</p>
               </div>
             </li>
           </ul>
@@ -178,12 +179,12 @@
         <div class="ai-row">
           <label class="ai-field ai-key-field" id="aiKeyField">
             <span>API Key</span>
-            <input type="password" id="aiApiKeyInput" placeholder="填 DeepSeek Key，或输入 openclaw / openclaw_wb" autocomplete="off" />
+            <input type="password" id="aiApiKeyInput" placeholder="填入 DeepSeek API Key" autocomplete="off" />
           </label>
           <button type="button" class="btn btn-primary" id="aiAnalyzeBtn">开始分析</button>
           <button type="button" class="btn btn-unlimited" id="aiUnlimitedBtn">获取无限分析功能</button>
         </div>
-        <small class="field-hint" id="aiChannelHint">默认 DeepSeek（deepseek-v4-flash · https://api.deepseek.com）。若要走本地 Agent，在 API Key 里直接输入 openclaw 或 openclaw_wb。</small>
+        <small class="field-hint" id="aiChannelHint">使用 DeepSeek（deepseek-v4-flash · https://api.deepseek.com），填入你的 API Key 即可。</small>
       </div>
       <div class="ai-answer" id="aiAnswerView">点击「开始分析」后，AI 将回答：当前训练情况怎么样，是否值得继续，以及最新因子的含义与原理。</div>
     </section>
@@ -363,9 +364,64 @@
         </details>
       </section>
     </div><!-- /page-backtest -->
+
+    <!-- ══════════════ 步骤三：实时分析页 ══════════════ -->
+    <div class="page" id="page-realtime">
+      <section class="panel launch-panel">
+        <span class="hud-corner tl"></span><span class="hud-corner tr"></span>
+        <span class="hud-corner bl"></span><span class="hud-corner br"></span>
+        <h2>添加监控</h2>
+        <div class="rt-form">
+          <label class="rt-field">
+            <span>数据源</span>
+            <select id="rtSourceSelect"></select>
+          </label>
+          <label class="rt-field">
+            <span>品种</span>
+            <input type="text" id="rtSymbolInput" list="rtSymbolPresets" placeholder="如 XAUUSD / 600519" autocomplete="off" />
+            <datalist id="rtSymbolPresets"></datalist>
+          </label>
+          <label class="rt-field">
+            <span>周期</span>
+            <select id="rtTimeframeSelect"></select>
+          </label>
+          <label class="rt-field rt-field-wide">
+            <span>因子来源</span>
+            <select id="rtStrategySelect"></select>
+          </label>
+          <div class="rt-actions">
+            <button type="button" class="btn btn-secondary" id="rtBrowseStrategyBtn" title="导入本地策略 JSON">导入策略</button>
+            <button type="button" class="btn btn-primary" id="rtAddBtn">加入监控</button>
+          </div>
+        </div>
+        <div class="rt-form-foot">
+          <span class="rt-source-hint" id="rtSourceHint">—</span>
+          <span class="rt-thr-hint" id="rtThresholdHint">无信号阈值 |tanh(因子)| &lt; 0.05</span>
+        </div>
+        <small class="field-hint" id="rtStrategyPicked">因子来源：从已保存策略下拉选择，或「导入策略」选本地 JSON。信号取最后已收盘 bar。</small>
+      </section>
+
+      <section class="panel rt-radar-panel">
+        <span class="hud-corner tl"></span><span class="hud-corner tr"></span>
+        <span class="hud-corner bl"></span><span class="hud-corner br"></span>
+        <div class="panel-head">
+          <h2>信号雷达</h2>
+          <div class="rt-head-right">
+            <span class="hint" id="rtStatusHint">未启动</span>
+            <label class="rt-engine-toggle">
+              <input type="checkbox" id="rtEngineToggle" />
+              <span>引擎</span>
+            </label>
+          </div>
+        </div>
+        <div class="rt-grid" id="rtGrid">
+          <div class="metric-empty">尚无监控项。添加「数据源 + 品种 + 周期 + 因子」后开始实时分析。</div>
+        </div>
+      </section>
+    </div><!-- /page-realtime -->
   </div>
 
   <script src="/static/bg.js?v=1"></script>
-  <script src="/static/app.js?v=36"></script>
+  <script src="/static/app.js?v=40"></script>
 </body>
 </html>

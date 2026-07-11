@@ -37,10 +37,18 @@ from web.server_log import (
     setup_logging,
 )
 from web.settings import load_settings, save_settings
-from web.strategy_file import inspect_strategy_file, resolve_strategy_file, sync_best_strategy_for_symbol
+from web.strategy_file import (
+    inspect_strategy_file,
+    resolve_strategy_file,
+    strategy_path_for_symbol,
+    sync_best_strategy_for_symbol,
+)
 from web.training_manager import training_manager
 from web.training_package import build_training_export_zip, import_training_package
 from web.backtest_manager import backtest_manager
+from web.realtime_manager import realtime_manager
+from web.data_sources.factory import list_sources
+from strategy_manager.live_signal import min_exposure
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 BACKTEST_OUTPUT_DIR = ROOT / "backtest_output"
@@ -87,6 +95,17 @@ class StartBacktestRequest(BaseModel):
     strategy_file: str
     commission_pct: float | None = None
     slippage_pct: float | None = None
+
+
+class AddWatchRequest(BaseModel):
+    source: str
+    symbol: str
+    timeframe: str
+    strategy_file: str
+
+
+class RemoveWatchRequest(BaseModel):
+    id: str
 
 
 @app.middleware("http")
@@ -827,6 +846,81 @@ def api_backtest_chart(name: str):
     if not path.exists():
         raise HTTPException(404, "图表不存在")
     return FileResponse(path, media_type="image/png")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 实时行情分析 API
+# ─────────────────────────────────────────────────────────────────────
+
+
+@app.on_event("startup")
+def _startup_realtime() -> None:
+    try:
+        realtime_manager.load_persisted()
+    except Exception as exc:  # noqa: BLE001
+        log_error("realtime load_persisted failed", exc)
+
+
+@app.get("/api/realtime/sources")
+def api_realtime_sources() -> dict[str, Any]:
+    return {"sources": list_sources(), "min_exposure": min_exposure()}
+
+
+@app.get("/api/realtime/strategies")
+def api_realtime_strategies() -> dict[str, Any]:
+    """已保存的 best_*.json 策略，供因子来源下拉。"""
+    rows = []
+    for s in list_strategies():
+        sym = s.get("symbol")
+        if not sym:
+            continue
+        path = strategy_path_for_symbol(sym)
+        if not path.exists():
+            continue
+        rows.append(
+            {
+                "symbol": sym,
+                "timeframe": s.get("timeframe"),
+                "best_score": s.get("best_score"),
+                "formula_decoded": s.get("formula_decoded"),
+                "strategy_file": str(path.resolve()),
+            }
+        )
+    return {"strategies": rows}
+
+
+@app.get("/api/realtime/status")
+def api_realtime_status() -> dict[str, Any]:
+    return realtime_manager.status()
+
+
+@app.post("/api/realtime/watch")
+def api_realtime_watch(req: AddWatchRequest) -> dict[str, Any]:
+    try:
+        watch = realtime_manager.add_watch(
+            req.source, req.symbol, req.timeframe, req.strategy_file
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "watch": watch}
+
+
+@app.post("/api/realtime/unwatch")
+def api_realtime_unwatch(req: RemoveWatchRequest) -> dict[str, Any]:
+    removed = realtime_manager.remove_watch(req.id)
+    return {"ok": removed}
+
+
+@app.post("/api/realtime/start")
+def api_realtime_start() -> dict[str, Any]:
+    realtime_manager.start()
+    return {"ok": True, **realtime_manager.status()}
+
+
+@app.post("/api/realtime/stop")
+def api_realtime_stop() -> dict[str, Any]:
+    realtime_manager.stop()
+    return {"ok": True, "running": False}
 
 
 @app.get("/")
