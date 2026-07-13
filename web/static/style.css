@@ -1154,6 +1154,35 @@ td:nth-child(2) { color: var(--accent); font-family: var(--mono); }
   margin-bottom: 18px;
 }
 
+.modal-card-error {
+  width: min(860px, 100%);
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.modal-card-error h3 {
+  color: #fca5a5;
+}
+
+.modal-error-detail {
+  margin: 0 0 18px;
+  max-height: min(55vh, 480px);
+  overflow: auto;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  color: #fecaca;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.data-file-card .path.data-file-missing {
+  color: #fca5a5;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

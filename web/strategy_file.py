@@ -64,13 +64,25 @@ def inspect_strategy_file(path: str) -> dict[str, Any]:
         raise ValueError("策略文件缺少 formula 字段")
 
     formula_decoded = None
+    timeframe = None
+    data_file = None
+    mode = None
     if isinstance(data, dict):
         formula_decoded = data.get("formula_decoded") or _decode_formula(formula)
+        timeframe = data.get("timeframe")
+        data_file = data.get("data_file")
+        mode = data.get("mode")
+
+    data_file_exists = bool(data_file) and Path(str(data_file)).exists()
 
     return {
         "strategy_file": str(p.resolve()),
         "filename": p.name,
         "symbol": symbol or "",
+        "timeframe": timeframe,
+        "data_file": data_file,
+        "data_file_exists": data_file_exists,
+        "mode": mode,
         "best_score": best_score,
         "vocab_version": vocab_version,
         "formula_decoded": formula_decoded,

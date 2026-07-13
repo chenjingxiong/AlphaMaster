@@ -90,7 +90,7 @@
           <button class="btn btn-secondary" id="importTrainingBtn" disabled title="上传 .zip 或 .pt，下次训练断点续训">导入训练</button>
           <input type="file" id="importTrainingFile" accept=".zip,.pt" hidden />
         </div>
-        <small class="field-hint">Parquet 命名：<code>{品种}_{周期}.parquet</code>，如 <code>XAUUSD_H1.parquet</code></small>
+        <small class="field-hint">强制离线：只用本地 Parquet，不连接 MT5。命名：<code>{品种}_{周期}.parquet</code>，如 <code>XAUUSD_H1.parquet</code></small>
       </div>
     </section>
 
@@ -280,7 +280,7 @@
             </label>
             <span class="bt-cost-sum" id="btCostSumHint">合计单边成本 0.03%</span>
           </div>
-          <small class="field-hint">单边手续费/滑点，开平仓各扣一次。默认手续费 0.02%、滑点 0.01%。策略默认 <code>strategies/best_{品种}.json</code>。</small>
+          <small class="field-hint">训练/回测均强制使用本地 Parquet，不连接 MT5。回测优先读策略内 <code>data_file</code>；没有则回退训练页同品种文件。单边手续费/滑点开平仓各扣一次。</small>
         </div>
       </section>
 
@@ -539,9 +539,21 @@
         </div>
       </div>
     </div>
+
+    <div class="modal" id="errorModal" hidden>
+      <div class="modal-backdrop" data-close-error></div>
+      <div class="modal-card modal-card-error" role="dialog" aria-labelledby="errorModalTitle">
+        <h3 id="errorModalTitle">出错了</h3>
+        <pre class="modal-error-detail" id="errorModalDetail"></pre>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="errorModalCopyBtn">复制详情</button>
+          <button type="button" class="btn btn-primary" data-close-error>知道了</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/bg.js?v=1"></script>
-  <script src="/static/app.js?v=55"></script>
+  <script src="/static/app.js?v=58"></script>
 </body>
 </html>

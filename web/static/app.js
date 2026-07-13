@@ -17,6 +17,9 @@ let btBuster = "";      // 图表缓存刷新键（用 job 时间戳）
 let btPortfolioSig = ""; // 绩效卡签名：变化时才重建 + 播放数字动画，避免每次轮询重播
 let lastEquityData = null; // 最近一次资金曲线数据，供绩效卡 sparkline 复用
 let lastTrainingActive = false;
+let btLastAlertKey = "";
+let lastErrorPopupText = "";
+let lastErrorPopupAt = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -72,6 +75,11 @@ async function logClientError(message, context = {}) {
   clientErrors.push(entry);
   if (clientErrors.length > 80) clientErrors = clientErrors.slice(-80);
   renderDebugView();
+  const silent = !!context.silent;
+  if (!silent) {
+    const detail = context.detail ? `${message}\n\n${context.detail}` : message;
+    showErrorPopup("出错了", detail);
+  }
   try {
     await fetch(API + "/api/debug/client-log", {
       method: "POST",
@@ -80,6 +88,44 @@ async function logClientError(message, context = {}) {
     });
   } catch (_) {
     /* server may be down */
+  }
+}
+
+function showErrorPopup(title, detail) {
+  const modal = $("errorModal");
+  const titleEl = $("errorModalTitle");
+  const detailEl = $("errorModalDetail");
+  if (!modal || !detailEl) {
+    window.alert(`${title}\n\n${detail}`);
+    return;
+  }
+  const text = String(detail || "").trim() || "未知错误";
+  const now = Date.now();
+  if (text === lastErrorPopupText && now - lastErrorPopupAt < 2500) return;
+  lastErrorPopupText = text;
+  lastErrorPopupAt = now;
+  if (titleEl) titleEl.textContent = title || "出错了";
+  detailEl.textContent = text;
+  modal.hidden = false;
+}
+
+function closeErrorPopup() {
+  const modal = $("errorModal");
+  if (modal) modal.hidden = true;
+}
+
+async function copyErrorPopupDetail() {
+  const text = $("errorModalDetail")?.textContent || "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
   }
 }
 
@@ -143,19 +189,22 @@ async function refreshDebugLogs() {
 }
 
 async function fetchJSON(path, opts = {}) {
+  const silent = !!opts.silent;
+  const fetchOpts = { ...opts };
+  delete fetchOpts.silent;
   let res;
   try {
-    res = await fetch(API + path, opts);
+    res = await fetch(API + path, fetchOpts);
   } catch (e) {
     const msg = `网络错误 ${path}: ${e.message}`;
-    await logClientError(msg, { path });
+    await logClientError(msg, { path, silent });
     throw new Error(msg);
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = formatApiError(data, res.status, path);
-    await logClientError(`${path} -> ${msg}`, { path, status: res.status });
-    await refreshDebugLogs();
+    await logClientError(`${path} -> ${msg}`, { path, status: res.status, silent });
+    if (!silent) await refreshDebugLogs();
     throw new Error(msg);
   }
   return data;
@@ -259,6 +308,11 @@ function renderStrategyFileCard(info) {
   const timeframeItem = info.timeframe
     ? `<div class="item"><span class="label">周期</span><span class="value">${info.timeframe}</span></div>`
     : "";
+  const dataPath = info.data_file || "";
+  const dataOk = info.data_file_exists;
+  const dataHint = dataPath
+    ? (dataOk ? dataPath : `（文件不存在）${dataPath}`)
+    : "未记录数据路径 — 回测前请先在训练页选择同品种 Parquet";
   card.innerHTML = `
     <div class="data-file-row">
       <div class="item"><span class="label">品种</span><span class="value sym">${info.symbol || "—"}</span></div>
@@ -267,7 +321,8 @@ function renderStrategyFileCard(info) {
       <div class="item"><span class="label">词表版本</span><span class="value">${info.vocab_version || "—"}</span></div>
       <div class="item"><span class="label">公式长度</span><span class="value">${info.formula_decoded ? info.formula_decoded.split("→").length : "—"}</span></div>
     </div>
-    <div class="path" title="${info.strategy_file}">${info.filename || info.strategy_file}</div>
+    <div class="path" title="${info.strategy_file}">策略: ${info.filename || info.strategy_file}</div>
+    <div class="path ${dataPath && dataOk ? "" : "data-file-missing"}" title="${dataPath || ""}">数据: ${dataHint}</div>
   `;
   updateBtStartBtn();
 }
@@ -550,15 +605,15 @@ async function refreshOverview() {
   let training = { active: false, job: null, log_tail: [] };
 
   try {
-    overview = await fetchJSON("/api/overview");
+    overview = await fetchJSON("/api/overview", { silent: true });
   } catch (_) {}
 
   try {
-    strategies = await fetchJSON("/api/strategies");
+    strategies = await fetchJSON("/api/strategies", { silent: true });
   } catch (_) {}
 
   try {
-    training = await fetchJSON("/api/training/status");
+    training = await fetchJSON("/api/training/status", { silent: true });
   } catch (_) {}
 
   if (overview.data_file) renderDataFileCard(overview.data_file);
@@ -1078,7 +1133,7 @@ function fmtSigned(v, digits = 3) {
 async function refreshBacktest() {
   let st;
   try {
-    st = await fetchJSON("/api/backtest/status");
+    st = await fetchJSON("/api/backtest/status", { silent: true });
   } catch (_) {
     return;
   }
@@ -1087,7 +1142,6 @@ async function refreshBacktest() {
   const state = job?.state || "idle";
 
   // 按钮
-  const startBtn = $("btStartBtn");
   const stopBtn = $("btStopBtn");
   updateBtStartBtn();
   if (stopBtn) stopBtn.disabled = !btActive;
@@ -1097,15 +1151,28 @@ async function refreshBacktest() {
 
   // 日志
   const logView = $("btLogView");
+  const logText = (st.log_tail || []).join("\n") || "等待任务…";
   if (logView) {
     const atBottom = isViewAtBottom(logView);
-    logView.textContent = (st.log_tail || []).join("\n") || "等待任务…";
+    logView.textContent = logText;
     if (atBottom) logView.scrollTop = logView.scrollHeight;
   }
   if ($("btLogHint")) $("btLogHint").textContent = job?.log_path || "—";
 
   // 阶段进度条
   updateBacktestPhase(st, state);
+
+  if (state === "failed") {
+    const alertKey = `${job?.log_path || ""}|${job?.finished_at || ""}|${job?.exit_code ?? ""}`;
+    if (alertKey && alertKey !== btLastAlertKey) {
+      btLastAlertKey = alertKey;
+      const errLine = job?.error ? `\n错误: ${job.error}` : "";
+      showErrorPopup(
+        "回测失败",
+        `退出码: ${job?.exit_code ?? "?"}${errLine}\n日志: ${job?.log_path || "—"}\n\n${logText}`
+      );
+    }
+  }
 
   // 结果报告（非运行态时刷新，运行态保留上次结果）
   if (!btActive) {
@@ -1157,7 +1224,7 @@ async function refreshBacktestReport() {
     ? `/api/backtest/report?symbol=${encodeURIComponent(sym)}`
     : "/api/backtest/report";
   try {
-    data = await fetchJSON(url);
+    data = await fetchJSON(url, { silent: true });
   } catch (_) {
     return;
   }
@@ -1180,7 +1247,7 @@ async function refreshEquityCurve() {
     ? `/api/backtest/equity?symbol=${encodeURIComponent(sym)}`
     : "/api/backtest/equity";
   try {
-    const data = await fetchJSON(url);
+    const data = await fetchJSON(url, { silent: true });
     lastEquityData = data?.available ? data.data : null;
     renderEquity(data);
   } catch (_) {
@@ -2062,14 +2129,14 @@ async function rtRemoveWatch(id) {
 async function refreshRealtime() {
   let st;
   try {
-    st = await fetchJSON("/api/realtime/status");
+    st = await fetchJSON("/api/realtime/status", { silent: true });
   } catch (_) {
     return;
   }
   // 有监控项却未在跑时自动拉起（不再提供手动开关）
   if (st.count > 0 && !st.running) {
     try {
-      st = await fetchJSON("/api/realtime/start", { method: "POST" });
+      st = await fetchJSON("/api/realtime/start", { method: "POST", silent: true });
     } catch (_) {}
   }
   rtEngineRunning = !!st.running;
@@ -2264,6 +2331,12 @@ async function init() {
   document.querySelectorAll("[data-close-unlimited]").forEach((el) => {
     el.addEventListener("click", closeUnlimitedModal);
   });
+  document.querySelectorAll("[data-close-error]").forEach((el) => {
+    el.addEventListener("click", closeErrorPopup);
+  });
+  if ($("errorModalCopyBtn")) {
+    $("errorModalCopyBtn").addEventListener("click", copyErrorPopupDetail);
+  }
 
   // 步骤导航
   document.querySelectorAll(".stepper .step").forEach((btn) => {

@@ -798,14 +798,44 @@ def api_backtest_start(req: StartBacktestRequest) -> dict[str, Any]:
     })
 
     data_file: str | None = None
-    last_data = settings.get("last_data_file") or ""
-    if last_data:
+    # 1) 优先用策略 JSON 里记录的训练数据路径
+    strat_data = (info.get("data_file") or "").strip()
+    if strat_data:
         try:
-            pf = inspect_parquet_file(last_data)
-            if pf.get("symbol") == info.get("symbol"):
-                data_file = pf["data_file"]
-        except Exception:
-            pass
+            pf = inspect_parquet_file(strat_data)
+            if pf.get("valid") is False:
+                raise HTTPException(
+                    400,
+                    f"策略记录的数据文件无效: {pf.get('message') or strat_data}",
+                )
+            data_file = pf["data_file"]
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                400,
+                f"策略记录的数据文件无法加载: {strat_data}\n{e}",
+            ) from e
+    else:
+        # 2) 回退：训练页最近选择的、同品种 Parquet
+        last_data = settings.get("last_data_file") or ""
+        if last_data:
+            try:
+                pf = inspect_parquet_file(last_data)
+                if pf.get("symbol") == info.get("symbol") and pf.get("valid") is not False:
+                    data_file = pf["data_file"]
+            except Exception:
+                pass
+
+    if not data_file:
+        raise HTTPException(
+            400,
+            "该策略未记录数据文件路径（data_file），且当前也没有同品种的 Parquet。"
+            "请先在「模型训练」页选择对应品种的 Parquet 再回测；"
+            "或使用本软件训练/导出、且包含 data_file 字段的策略文件。",
+        )
+
+    save_settings({"last_data_file": data_file})
 
     try:
         job = backtest_manager.start(
@@ -816,7 +846,7 @@ def api_backtest_start(req: StartBacktestRequest) -> dict[str, Any]:
         )
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
-    return {"ok": True, "job": job.to_dict(), "strategy_file": info}
+    return {"ok": True, "job": job.to_dict(), "strategy_file": info, "data_file": data_file}
 
 
 @app.post("/api/backtest/stop")

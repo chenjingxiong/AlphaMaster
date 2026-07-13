@@ -38,6 +38,8 @@ def train_from_file(data_file: str, *, from_scratch: bool = False) -> AlphaEngin
     print(f"{'='*60}")
     print(f"  品种: {symbol}")
     print(f"  周期: {timeframe}")
+    print(f"  数据: 强制离线 Parquet（不连接 MT5）")
+    print(f"  文件: {Path(data_file).resolve()}")
     print(f"  训练步数: {ModelConfig.TRAIN_STEPS}")
     print(f"  K线数: {info['bars']}")
     print(f"  模式: {'重新训练（从头）' if from_scratch else '自动续训'}")
@@ -53,6 +55,10 @@ def train_from_file(data_file: str, *, from_scratch: bool = False) -> AlphaEngin
         return None
 
     engine = AlphaEngine(data_manager=mgr, target_symbol=symbol)
+    engine.timeframe = timeframe
+    engine.data_file = str(Path(data_file).resolve())
+    engine.mode = "parquet_file"
+    engine.train_steps = ModelConfig.TRAIN_STEPS
 
     ckpt_pattern = str(pathlib.Path("checkpoints") / f"ckpt_{symbol}_step_*.pt")
     ckpt_files = sorted(_glob.glob(ckpt_pattern))

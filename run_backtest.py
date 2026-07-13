@@ -1,10 +1,13 @@
 """
 run_backtest.py — 多因子组合回测（含手续费/滑点、夏普、资金曲线）
 
+训练/回测一律使用本地 Parquet，不连接 MT5 在线拉数。
+
 用法：
-    python run_backtest.py              # 多因子模式（每品种独立公式）
-    python run_backtest.py --single     # 单公式兼容模式
-    python run_backtest.py --offline --commission 0.02 --slippage 0.01
+    python run_backtest.py --strategy-file strategies/best_ADAUSD.json --data-file D:\\K线数据\\ADAUSD_H1.parquet
+    python run_backtest.py --strategy-file path\\to\\strategy.json
+        # 若策略 JSON 内含 data_file 字段，可省略 --data-file
+    python run_backtest.py --commission 0.02 --slippage 0.01
         # 单边手续费/滑点（单位 %），默认 0.02 / 0.01
 """
 
@@ -19,8 +22,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import Config
-from data_pipeline.data_manager import MT5DataManager
-from data_pipeline.fetcher import MT5DataFetcher
+from data_pipeline.parquet_manager import ParquetDataManager
 from backtest_viz import BacktestEngine
 from model_core.vocab import FORMULA_VOCAB, VOCAB_VERSION
 from model_core.vm import StackVM
@@ -314,7 +316,10 @@ def export_equity_json(
 def main():
     OUTPUT_DIR  = "backtest_output"
     single_mode = "--single" in sys.argv
-    offline_mode = "--offline" in sys.argv
+    # 回测强制离线：只用本地 Parquet，永不连 MT5 在线
+    if "--online" in sys.argv or "--mt5" in sys.argv:
+        print("[ERROR] 回测已禁用在线/MT5 拉数。请使用本地 Parquet（--data-file 或策略内 data_file）。")
+        sys.exit(1)
 
     strategy_file = None
     data_file_arg = None
@@ -338,33 +343,39 @@ def main():
         f"手续费={commission_pct:g}%  滑点={slippage_pct:g}%  "
         f"→ cost_rate={cost_rate_all:.8f}"
     )
+    print("数据模式: 强制离线 Parquet（不连接 MT5）")
 
     # ── 2. 加载策略 ─────────────────────────────────────────────────
-    symbols_to_load: list[str] | None = None
+    strategy_data_file = None
     print(f"\n{'='*62}")
     if strategy_file:
         data = load_strategy(Path(strategy_file))
         if data is None:
             print(f"[ERROR] 找不到: {strategy_file}"); sys.exit(1)
+        strategy_data_file = data.get("data_file")
         sym = data.get("symbol")
         if not sym:
             stem = Path(strategy_file).stem
             if stem.startswith("best_"):
                 sym = stem.replace("best_", "", 1)
             elif stem.startswith("strategy_"):
-                sym = stem.replace("strategy_", "", 1)
+                # strategy_ADAUSD_step0084_score2.4021 / strategy_ADAUSD (1)
+                rest = stem.replace("strategy_", "", 1)
+                sym = rest.split("_step")[0].split(" ")[0]
         if not sym:
             print("[ERROR] 策略文件未包含 symbol，且无法从文件名识别"); sys.exit(1)
         symbol_formulas = {sym: data["formula"]}
-        symbols_to_load = [sym]
         sc = data.get("best_score", "N/A")
         score_txt = f"{sc:.3f}" if isinstance(sc, (int, float)) else str(sc)
         print(f"  模式: 单策略文件 ({Path(strategy_file).name})")
         print(f"  {sym}: score={score_txt}  {decode_formula(data['formula'])}")
+        if strategy_data_file:
+            print(f"  策略记录数据: {strategy_data_file}")
     elif single_mode:
         data = load_strategy(Path(Config.STRATEGY_FILE))
         if data is None:
             print(f"[ERROR] 找不到: {Config.STRATEGY_FILE}"); sys.exit(1)
+        strategy_data_file = data.get("data_file")
         symbol_formulas = {sym: data["formula"] for sym in Config.SYMBOLS}
         print("  模式: 单公式（所有品种共用）")
     else:
@@ -380,31 +391,49 @@ def main():
                 print(f"  [跳过] {sym}: vocab_version 不符 ({ver} vs {VOCAB_VERSION})")
                 continue
             symbol_formulas[sym] = data["formula"]
+            if not strategy_data_file and data.get("data_file"):
+                strategy_data_file = data.get("data_file")
             sc = data.get("best_score", "N/A")
             print(f"  {sym}: score={sc:.3f}  {decode_formula(data['formula'])}")
 
     if not symbol_formulas:
-        print("[ERROR] 没有有效策略，请先运行 main.py"); sys.exit(1)
+        print("[ERROR] 没有有效策略，请先运行训练"); sys.exit(1)
 
     cost_rates = {sym: cost_rate_all for sym in symbol_formulas}
     print(f"{'='*62}\n")
 
-    # ── 3. 加载数据 ───────────────────────────────────────────────────
-    if data_file_arg:
-        from data_pipeline.parquet_manager import ParquetDataManager
+    # ── 3. 加载数据（仅本地 Parquet）────────────────────────────────
+    if not data_file_arg and strategy_data_file:
+        data_file_arg = str(strategy_data_file).strip() or None
 
-        print(f"正在加载数据（Parquet: {Path(data_file_arg).name}）...")
-        pm = ParquetDataManager(data_file_arg)
-        pm.load()
-        raw_dict = pm.raw_dict
-        syms = pm.symbols
-    else:
-        print(f"正在加载数据{'（离线缓存）' if offline_mode else '（连接 MT5）'}...")
-        with MT5DataFetcher(offline=offline_mode) as fetcher:
-            mgr = MT5DataManager(fetcher)
-            mgr.load(symbols=symbols_to_load)
-            raw_dict = mgr.raw_dict
-            syms = mgr.symbols
+    if not data_file_arg:
+        print(
+            "[ERROR] 未指定本地 Parquet。\n"
+            "请传入 --data-file PATH\\TO\\SYMBOL_TF.parquet，\n"
+            "或使用包含 data_file 字段的策略 JSON（本软件训练生成）。\n"
+            "回测不会连接 MT5 / 不会使用在线行情。"
+        )
+        sys.exit(1)
+
+    parquet_path = Path(data_file_arg)
+    if not parquet_path.exists():
+        print(f"[ERROR] Parquet 不存在: {parquet_path}")
+        sys.exit(1)
+
+    print(f"正在加载数据（离线 Parquet: {parquet_path}）...")
+    pm = ParquetDataManager(str(parquet_path))
+    pm.load()
+    raw_dict = pm.raw_dict
+    syms = pm.symbols
+    # 策略品种名与 Parquet 品种不一致时（单策略 + 单品种文件），映射公式到数据品种
+    if strategy_file and len(symbol_formulas) == 1 and len(syms) == 1:
+        strat_sym = next(iter(symbol_formulas))
+        data_sym = syms[0]
+        if strat_sym != data_sym:
+            formula = symbol_formulas[strat_sym]
+            print(f"  [映射] 策略品种 {strat_sym} → 数据品种 {data_sym}")
+            symbol_formulas = {data_sym: formula}
+            cost_rates = {data_sym: cost_rate_all}
 
     T = raw_dict["open"].shape[1]
     times_all = raw_dict.get("time", None)

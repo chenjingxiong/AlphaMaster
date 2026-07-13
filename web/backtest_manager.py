@@ -122,7 +122,6 @@ class BacktestManager:
                 sys.executable,
                 "-u",
                 "run_backtest.py",
-                "--offline",
                 "--strategy-file",
                 strategy_file,
                 "--commission",
@@ -130,8 +129,11 @@ class BacktestManager:
                 "--slippage",
                 str(slippage_pct),
             ]
-            if data_file:
-                cmd.extend(["--data-file", data_file])
+            if not data_file:
+                raise RuntimeError(
+                    "回测必须使用本地 Parquet（策略未记录 data_file，且未传入数据文件）"
+                )
+            cmd.extend(["--data-file", data_file])
 
             self._log_fp = open(log_path, "w", encoding="utf-8", buffering=1)
             env = os.environ.copy()

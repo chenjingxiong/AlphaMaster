@@ -1,5 +1,7 @@
 # MT5 AlphaGPT — 策略因子库
 
+> **注意**：`*.json` 策略文件仅保存在本地，已加入 `.gitignore`，不会上传到 GitHub。
+
 > 生成时间: 2026-07-06 09:38
 > 训练框架: AlphaGPT (REINFORCE + Transformer + 公式 DSL)
 > 回测周期: H1 时间帧，独立验证脚本 `verify_all_strategies.py`

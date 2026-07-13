@@ -980,16 +980,36 @@ class AlphaEngine:
             return
         try:
             from .vocab import VOCAB_VERSION
-            strategy_data = {
-                "vocab_version": VOCAB_VERSION,
-                "symbol":        self.target_symbol,
-                "formula":       self.best_formula,
-                "best_score":    self.best_score,
-            }
             save_path = _strategy_file_for_symbol(self.target_symbol)
             pathlib.Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(save_path, "w") as fp:
-                json.dump(strategy_data, fp, indent=2)
+
+            existing: dict = {}
+            p = pathlib.Path(save_path)
+            if p.exists():
+                try:
+                    raw = json.loads(p.read_text(encoding="utf-8"))
+                    if isinstance(raw, dict):
+                        existing = raw
+                except Exception:
+                    existing = {}
+
+            strategy_data = {
+                "vocab_version": VOCAB_VERSION,
+                "symbol": self.target_symbol,
+                "formula": self.best_formula,
+                "best_score": self.best_score,
+                "formula_decoded": self._decode_formula(self.best_formula),
+            }
+            # 保留训练数据路径等元数据，避免 live 保存把 data_file 冲掉
+            for key in ("timeframe", "data_file", "mode", "train_steps"):
+                val = getattr(self, key, None)
+                if val is None:
+                    val = existing.get(key)
+                if val is not None:
+                    strategy_data[key] = val
+
+            with open(save_path, "w", encoding="utf-8") as fp:
+                json.dump(strategy_data, fp, indent=2, ensure_ascii=False)
         except Exception:
             pass
 
