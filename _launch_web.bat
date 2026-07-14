@@ -1,4 +1,4 @@
 @echo off
+REM Compatibility wrapper — prefer start_web.bat
 cd /d "%~dp0"
-python run_web.py
-pause
+call "%~dp0start_web.bat"

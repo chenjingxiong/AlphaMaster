@@ -190,24 +190,37 @@ async function refreshDebugLogs() {
 
 async function fetchJSON(path, opts = {}) {
   const silent = !!opts.silent;
+  const maxRetries = opts.retries != null ? Number(opts.retries) : 5;
+  const retryDelayMs = opts.retryDelayMs != null ? Number(opts.retryDelayMs) : 2000;
   const fetchOpts = { ...opts };
   delete fetchOpts.silent;
-  let res;
-  try {
-    res = await fetch(API + path, fetchOpts);
-  } catch (e) {
-    const msg = `网络错误 ${path}: ${e.message}`;
-    await logClientError(msg, { path, silent });
-    throw new Error(msg);
+  delete fetchOpts.retries;
+  delete fetchOpts.retryDelayMs;
+
+  let lastNetworkMsg = null;
+  for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt++) {
+    let res;
+    try {
+      res = await fetch(API + path, fetchOpts);
+    } catch (e) {
+      lastNetworkMsg = `网络错误 ${path}: ${e.message}`;
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        continue;
+      }
+      await logClientError(lastNetworkMsg, { path, silent, attempts: attempt });
+      throw new Error(lastNetworkMsg);
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = formatApiError(data, res.status, path);
+      await logClientError(`${path} -> ${msg}`, { path, status: res.status, silent });
+      if (!silent) await refreshDebugLogs();
+      throw new Error(msg);
+    }
+    return data;
   }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = formatApiError(data, res.status, path);
-    await logClientError(`${path} -> ${msg}`, { path, status: res.status, silent });
-    if (!silent) await refreshDebugLogs();
-    throw new Error(msg);
-  }
-  return data;
+  throw new Error(lastNetworkMsg || `网络错误 ${path}`);
 }
 
 function formatScore(v) {
