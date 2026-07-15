@@ -1,7 +1,6 @@
 """Load training data from a single Parquet K-line file."""
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -13,22 +12,104 @@ from config import Config
 from data_pipeline.data_manager import MT5DataManager
 from model_core.features import MT5FeatureEngineer
 
+# Canonical labels used across the project
 _TIMEFRAMES = ("M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1")
-_PARQUET_RE = re.compile(
-    rf"^(.+)_({'|'.join(_TIMEFRAMES)})\.parquet$",
-    re.IGNORECASE,
-)
+
+# Filename suffix aliases → canonical (case-insensitive keys)
+_TF_ALIASES: dict[str, str] = {
+    # M1
+    "m1": "M1",
+    "1m": "M1",
+    "1min": "M1",
+    "min1": "M1",
+    # M5
+    "m5": "M5",
+    "5m": "M5",
+    "5min": "M5",
+    "min5": "M5",
+    # M15
+    "m15": "M15",
+    "15m": "M15",
+    "15min": "M15",
+    "min15": "M15",
+    # M30
+    "m30": "M30",
+    "30m": "M30",
+    "30min": "M30",
+    "min30": "M30",
+    # H1
+    "h1": "H1",
+    "1h": "H1",
+    "60m": "H1",
+    "60min": "H1",
+    "min60": "H1",
+    "60": "H1",
+    # H4
+    "h4": "H4",
+    "4h": "H4",
+    "240m": "H4",
+    "240min": "H4",
+    "min240": "H4",
+    "240": "H4",
+    # D1
+    "d1": "D1",
+    "1d": "D1",
+    "day": "D1",
+    "daily": "D1",
+    "1440m": "D1",
+    "1440min": "D1",
+    # W1
+    "w1": "W1",
+    "1w": "W1",
+    "week": "W1",
+    "weekly": "W1",
+    # MN1 (month) — avoid bare "1m" which already maps to M1
+    "mn1": "MN1",
+    "1mo": "MN1",
+    "1mon": "MN1",
+    "month": "MN1",
+    "monthly": "MN1",
+}
+
+
+def normalize_timeframe_token(token: str) -> str | None:
+    """Map a filename timeframe token to canonical M1/M5/.../MN1."""
+    raw = (token or "").strip()
+    if not raw:
+        return None
+    key = raw.lower().replace("-", "").replace("_", "")
+    if key in _TF_ALIASES:
+        return _TF_ALIASES[key]
+    upper = raw.upper()
+    if upper in _TIMEFRAMES:
+        return upper
+    return None
 
 
 def parse_parquet_filename(path: str | Path) -> tuple[str, str]:
-    """Parse ``{symbol}_{timeframe}.parquet`` e.g. ``AAPL_H1.parquet``."""
+    """Parse ``{symbol}_{timeframe}.parquet``.
+
+    Accepts canonical suffixes (``H1``) and common aliases (``60min``, ``1h``, ``5m``…).
+    Examples: ``AAPL_H1.parquet``, ``002008_60min.parquet``, ``BTCUSDT_1h.parquet``.
+    """
     name = Path(path).name
-    m = _PARQUET_RE.match(name)
-    if not m:
+    if Path(path).suffix.lower() != ".parquet":
+        raise ValueError(f"请选择 .parquet 文件；当前: {name}")
+    stem = Path(path).stem
+    if "_" not in stem:
         raise ValueError(
-            f"文件名须为 {{品种}}_{{周期}}.parquet，例如 AAPL_H1.parquet；当前: {name}"
+            f"文件名须为 {{品种}}_{{周期}}.parquet，例如 AAPL_H1.parquet / 002008_60min.parquet；"
+            f"当前: {name}"
         )
-    return m.group(1), m.group(2).upper()
+    symbol, tf_raw = stem.rsplit("_", 1)
+    symbol = symbol.strip()
+    timeframe = normalize_timeframe_token(tf_raw)
+    if not symbol or timeframe is None:
+        raise ValueError(
+            f"文件名须为 {{品种}}_{{周期}}.parquet，例如 AAPL_H1.parquet / 002008_60min.parquet；"
+            f"支持周期别名: H1/60min/1h, M5/5min, D1/1d …；当前: {name}"
+        )
+    return symbol, timeframe
 
 
 def inspect_parquet_file(path: str | Path) -> dict[str, Any]:
