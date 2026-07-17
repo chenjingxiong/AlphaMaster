@@ -30,13 +30,16 @@ ENV PATH="/opt/venv/bin:${PATH}"
 WORKDIR /app
 
 # 先拷贝依赖清单，利用层缓存：requirements 不变时跳过耗时的 pip install
-COPY requirements.txt ./
+# 使用容器专用清单（去掉只有 Windows wheel 的 MetaTrader5；torch 由下面单独装 CPU 版）
+COPY requirements-docker.txt ./
 
-# 安装 CPU 版 torch（index-url 仅对 torch 生效），再装其余依赖。
-# tvdatafeed 来自 git，requirements.txt 已声明 @ git+...。
+# 两步安装，确保 torch 只装 CPU 版（~200MB vs CUDA ~2GB）：
+#   1) --index-url 指向 PyTorch CPU 索引，仅安装 torch + numpy（torch 依赖）
+#   2) 恢复 PyPI 默认源，安装其余依赖（tvdatafeed 来自 git，builder 已装 git）
 RUN pip install --upgrade pip wheel setuptools \
-    && pip install --index-url https://download.pytorch.org/whl/cpu torch \
-    && pip install -r requirements.txt
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+        torch numpy \
+    && pip install --no-cache-dir -r requirements-docker.txt
 
 
 # ─────────────────────────────────────────────────────────────

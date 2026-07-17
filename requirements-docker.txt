@@ -1,0 +1,50 @@
+# requirements-docker.txt
+# Docker 容器（Linux）专用依赖清单。
+#
+# 与 requirements.txt 的区别：
+#   - 移除 MetaTrader5：该包只有 Windows wheel（绑定 MT5 终端），Linux 无法安装。
+#     代码已做 try/except 降级（config.py / fetcher.py / web/data_sources/mt5_source.py），
+#     Web 训练/回测 + OKX/TradingView 数据源不依赖 MT5。
+#   - 其余依赖与 requirements.txt 完全一致（torch 由 Dockerfile 单独装 CPU 版）。
+#
+# 本地 Windows 开发仍用 requirements.txt（含 MetaTrader5）。
+
+# ===== Deep Learning & Numerical =====
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# ===== Data Processing =====
+pandas>=2.0.0
+pyarrow>=14.0.0
+
+# ===== Charts / Visualization =====
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# ===== Trading Platforms / Market Data =====
+# MetaTrader5 已移除（仅 Windows）。实盘/MT5 数据源在容器内不可用。
+tushare>=1.2.89
+pytdx>=1.72
+requests>=2.31.0
+# TradingView (tvDatafeed) — 不在 PyPI，从 git 安装（builder 阶段已装 git）。
+tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git
+
+# ===== Web UI =====
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+
+# ===== Auth / Crypto helpers =====
+cryptography>=41.0.0
+
+# ===== Environment & Logging =====
+python-dotenv>=1.0.0
+loguru>=0.7.0
+tqdm>=4.66.0
+
+# ===== Tests / E2E tooling =====
+pytest>=7.0.0
+hypothesis>=6.0.0
+playwright>=1.40.0
