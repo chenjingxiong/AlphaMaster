@@ -1,0 +1,58 @@
+# AlphaMaster - Docker Compose 部署配置
+#
+# 快速启动：
+#   docker compose up -d
+#
+# 访问 Web 控制台：http://<HOST>:8765
+#
+# 数据持久化：通过命名卷挂载 strategies / checkpoints / data 目录，
+#   容器重建后训练产物不会丢失。
+#
+# 环境变量：复制 .env.example → .env 并填入 MT5 等凭证。
+#   MT5 实盘功能在 Linux 容器内不可用（需 Windows + MT5 终端），
+#   但 Web 训练/回测 + OKX/TradingView 数据源可正常工作。
+
+services:
+  alphamaster:
+    image: ghcr.io/chenjingxiong/alphamaster:latest
+    container_name: alphamaster
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - TZ=Asia/Shanghai
+      - KLINE_CACHE_DIR=/app/data/kline_cache
+      # MT5 凭证（实盘 / 数据拉取；Linux 下无 MT5 终端时仅作占位）
+      - MT5_LOGIN=${MT5_LOGIN:-0}
+      - MT5_PASSWORD=${MT5_PASSWORD:-}
+      - MT5_SERVER=${MT5_SERVER:-}
+    env_file:
+      - path: .env
+        required: false   # .env 不存在时不报错
+    volumes:
+      # ── 策略 & 检查点：训练产物，必须持久化 ──
+      - strategies:/app/strategies
+      - checkpoints:/app/checkpoints
+      # ── 数据目录：Parquet 文件 / K 线缓存 ──
+      - data:/app/data
+      # ── 回测输出（图表、报告） ──
+      - backtest_output:/app/backtest_output
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8765/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # 资源限制：训练时 CPU 密集、内存适中（CPU-only torch）
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+volumes:
+  strategies:
+  checkpoints:
+  data:
+  backtest_output:

@@ -1,0 +1,115 @@
+# .dockerignore - 构建镜像时排除的文件，减小构建上下文体积、避免泄露敏感信息
+
+# ── 版本控制 ──
+.git
+.gitignore
+.gitattributes
+.github
+
+# ── Python 缓存与虚拟环境 ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+venv/
+.venv/
+env/
+ENV/
+
+# ── 测试与覆盖率缓存 ──
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+.tox/
+
+# ── 敏感信息（绝不进镜像） ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets/
+local_settings*.json
+web_settings.json
+web_settings*.json
+!web_settings.example.json
+
+# ── 训练产物 / 策略输出（体积大、机器相关，容器用挂卷管理） ──
+checkpoints/
+*.pt
+*.pth
+training_history*.json
+best_mt5_strategy.json
+strategies/*.json
+strategies/*.txt
+!strategies/README.md
+!strategies/*.md
+
+# ── 回测 / 验证输出 ──
+backtest_output/
+backtest_output_*/
+verification_results.json
+backtest_viz/
+
+# ── 数据缓存（大文件，通过挂卷挂入） ──
+data/
+data/cache/
+**/kline_cache/
+*.parquet
+*.hcc
+*.hc
+
+# ── 日志与运行态 ──
+*.log
+logs/
+portfolio_state.json
+ai_analysis_history.json
+train_elapsed.json
+train.pid
+train_stdout.log
+train_stderr.log
+STOP_SIGNAL
+training_time_*.json
+
+# ── 临时脚本 / 临时下载 ──
+_tmp_*.py
+backtest_current_forex.py
+_quick_bt.py
+tmp_downloads/
+tmp/
+*.zip
+
+# ── 文档图片与无关产物 ──
+docs/images/
+backtest_audit_*.md
+github_push_*.md
+independent_verification_*.md
+training_restart_*.md
+training_param_tune_*.md
+
+# ── IDE / 系统 ──
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── 本仓库的部署配置自身不必进镜像 ──
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ── Windows 启动脚本（容器是 Linux） ──
+_launch_*.bat
+start_web.bat
