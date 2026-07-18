@@ -27,8 +27,6 @@ seaborn>=0.12.0
 tushare>=1.2.89
 pytdx>=1.72
 requests>=2.31.0
-# TradingView (tvDatafeed) — 不在 PyPI，从 git 安装（builder 阶段已装 git）。
-tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git
 
 # ===== Web UI =====
 fastapi>=0.110.0
