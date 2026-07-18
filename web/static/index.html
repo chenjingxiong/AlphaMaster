@@ -563,6 +563,29 @@
         </div>
       </div>
     </div>
+
+    <div class="modal" id="fileBrowserModal" hidden>
+      <div class="modal-backdrop" data-close-file-browser></div>
+      <div class="modal-card modal-card-file-browser" role="dialog" aria-labelledby="fileBrowserTitle">
+        <h3 id="fileBrowserTitle">选择文件</h3>
+        <div class="modal-body modal-body-file-browser">
+          <div class="fb-upload-area" id="fbUploadArea">
+            <div class="fb-upload-hint" id="fbUploadHint">拖拽文件到此处，或点击上传</div>
+            <input type="file" id="fbFileInput" hidden>
+          </div>
+          <div class="fb-upload-progress" id="fbUploadProgress" hidden>
+            <div class="fb-upload-bar"><div class="fb-upload-fill" id="fbUploadFill"></div></div>
+            <span id="fbUploadLabel">上传中…</span>
+          </div>
+          <div class="fb-list" id="fbFileList"></div>
+          <div class="fb-empty" id="fbEmpty">暂无文件，请上传</div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" data-close-file-browser>取消</button>
+          <button type="button" class="btn btn-primary" id="fbSelectBtn" disabled>选择</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/bg.js?v=1"></script>

@@ -896,14 +896,214 @@ async function runAiAnalyze() {
 }
 
 async function browseStrategyFile() {
+  await openFileBrowser("strategy");
+}
+
+async function browseDataFile() {
+  await openFileBrowser("data");
+}
+
+// ── 文件浏览器（无头环境：列表 + 上传 + 选择）──────────────────────
+const fileBrowserState = {
+  mode: null,        // "data" | "strategy"
+  files: [],
+  selectedPath: null,
+  onSelect: null,    // 可选：自定义选中回调，签名 (path, info) => Promise<void>
+};
+
+function openFileBrowser(mode, onSelect) {
+  fileBrowserState.mode = mode;
+  fileBrowserState.selectedPath = null;
+  fileBrowserState.onSelect = onSelect || null;
+  const titleEl = $("fileBrowserTitle");
+  const uploadArea = $("fbUploadArea");
+  const hint = $("fbUploadHint");
+  if (titleEl) {
+    titleEl.textContent = mode === "data" ? "选择数据文件" : "选择策略文件";
+  }
+  if (uploadArea) uploadArea.hidden = mode !== "data";
+  if (hint) hint.textContent = mode === "data" ? "拖拽 .parquet 到此处，或点击上传" : "";
+  const modal = $("fileBrowserModal");
+  if (modal) modal.hidden = false;
+  $("fbSelectBtn").disabled = true;
+  refreshFileBrowserList();
+}
+
+function closeFileBrowser() {
+  const modal = $("fileBrowserModal");
+  if (modal) modal.hidden = true;
+  fileBrowserState.mode = null;
+  fileBrowserState.selectedPath = null;
+}
+
+async function refreshFileBrowserList() {
+  const mode = fileBrowserState.mode;
+  if (!mode) return;
+  const endpoint = mode === "data" ? "/api/data-file/list" : "/api/strategy-file/list";
   try {
-    const res = await fetchJSON("/api/strategy-file/browse", { method: "POST" });
-    if (res.cancelled) return;
-    renderStrategyFileCard(res);
+    const res = await fetchJSON(endpoint, { method: "GET", silent: true, retries: 1 });
+    fileBrowserState.files = res.files || [];
   } catch (e) {
-    $("debugView")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    fileBrowserState.files = [];
+  }
+  renderFileBrowserList();
+}
+
+function renderFileBrowserList() {
+  const listEl = $("fbFileList");
+  const emptyEl = $("fbEmpty");
+  if (!listEl) return;
+  const files = fileBrowserState.files;
+  if (!files.length) {
+    listEl.innerHTML = "";
+    if (emptyEl) emptyEl.hidden = false;
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+  listEl.innerHTML = files
+    .map((f) => {
+      const isSel = f.path === fileBrowserState.selectedPath;
+      const meta = [];
+      if (f.symbol) meta.push(f.symbol);
+      if (f.timeframe) meta.push(f.timeframe);
+      if (f.bars != null) meta.push(`${f.bars.toLocaleString()} bar`);
+      const sizeText = f.size != null ? formatBytes(f.size) : "";
+      const dateText = f.mtime ? new Date(f.mtime * 1000).toLocaleString() : "";
+      return `
+        <div class="fb-item ${isSel ? "selected" : ""}" data-path="${escapeAttr(f.path)}">
+          <div class="fb-item-main">
+            <div class="fb-item-name">${escapeHtml(f.filename || f.path)}</div>
+            <div class="fb-item-meta">${escapeHtml(meta.join(" · "))}</div>
+          </div>
+          <div class="fb-item-side">
+            <div class="fb-item-size">${sizeText}</div>
+            <div class="fb-item-date">${escapeHtml(dateText)}</div>
+          </div>
+        </div>`;
+    })
+    .join("");
+  listEl.querySelectorAll(".fb-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      fileBrowserState.selectedPath = el.getAttribute("data-path");
+      $("fbSelectBtn").disabled = false;
+      listEl.querySelectorAll(".fb-item").forEach((x) => x.classList.remove("selected"));
+      el.classList.add("selected");
+    });
+    el.addEventListener("dblclick", () => {
+      fileBrowserState.selectedPath = el.getAttribute("data-path");
+      confirmFileBrowserSelect();
+    });
+  });
+}
+
+async function confirmFileBrowserSelect() {
+  const path = fileBrowserState.selectedPath;
+  const mode = fileBrowserState.mode;
+  if (!path || !mode) return;
+  $("fbSelectBtn").disabled = true;
+  try {
+    if (mode === "data") {
+      const res = await fetchJSON(
+        `/api/data-file/inspect?path=${encodeURIComponent(path)}`,
+        { method: "GET", retries: 2 }
+      );
+      closeFileBrowser();
+      if (fileBrowserState.onSelect) {
+        await fileBrowserState.onSelect(path, res);
+      } else {
+        renderDataFileCard(res);
+        selectedSymbol = res.symbol;
+        await loadSymbolChart(res.symbol);
+      }
+    } else {
+      const res = await fetchJSON(
+        `/api/strategy-file/inspect?path=${encodeURIComponent(path)}`,
+        { method: "GET", retries: 2 }
+      );
+      closeFileBrowser();
+      if (fileBrowserState.onSelect) {
+        await fileBrowserState.onSelect(path, res);
+      } else {
+        renderStrategyFileCard(res);
+      }
+    }
+  } catch (e) {
+    $("fbSelectBtn").disabled = false;
   }
 }
+
+async function uploadDataFile(file) {
+  if (!file) return;
+  const prog = $("fbUploadProgress");
+  const fill = $("fbUploadFill");
+  const label = $("fbUploadLabel");
+  if (prog) prog.hidden = false;
+  if (fill) fill.style.width = "0%";
+  if (label) label.textContent = "上传中…";
+
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", API + "/api/data-file/upload");
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable && fill) {
+        fill.style.width = `${Math.round((ev.loaded / ev.total) * 100)}%`;
+      }
+    };
+    const result = await new Promise((resolve, reject) => {
+      xhr.onload = () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.detail || `上传失败 (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error("网络错误：上传失败"));
+      xhr.send(form);
+    });
+    if (label) label.textContent = "上传完成";
+    await refreshFileBrowserList();
+    // 自动选中刚上传的文件
+    const match = fileBrowserState.files.find((f) => f.filename === file.name);
+    if (match) {
+      fileBrowserState.selectedPath = match.path;
+      $("fbSelectBtn").disabled = false;
+      renderFileBrowserList();
+    }
+    // 上传成功且可解析 -> 直接载入
+    if (result && result.data_file) {
+      closeFileBrowser();
+      if (fileBrowserState.onSelect) {
+        await fileBrowserState.onSelect(result.data_file, result);
+      } else {
+        renderDataFileCard(result);
+        selectedSymbol = result.symbol;
+        await loadSymbolChart(result.symbol);
+      }
+    }
+  } catch (e) {
+    if (label) label.textContent = `上传失败：${e.message}`;
+    await logClientError(`上传数据文件失败：${e.message}`);
+  } finally {
+    setTimeout(() => { if (prog) prog.hidden = true; }, 1500);
+  }
+}
+
+function formatBytes(n) {
+  if (n == null || Number.isNaN(n)) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
 
 async function applyBestStrategyForBacktest(symbol, strategyFile) {
   if (strategyFile) {
@@ -933,18 +1133,6 @@ async function loadBacktestStrategyContext() {
     if (cfg.strategy_file) renderStrategyFileCard(cfg.strategy_file);
   } catch (_) {
     /* ignore */
-  }
-}
-
-async function browseDataFile() {
-  try {
-    const res = await fetchJSON("/api/data-file/browse", { method: "POST" });
-    if (res.cancelled) return;
-    renderDataFileCard(res);
-    selectedSymbol = res.symbol;
-    await loadSymbolChart(res.symbol);
-  } catch (e) {
-    $("debugView").scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 }
 
@@ -2133,20 +2321,21 @@ function onRtStrategyChange() {
 }
 
 async function rtBrowseStrategy() {
-  try {
-    const res = await fetchJSON("/api/strategy-file/browse", { method: "POST" });
-    if (res.cancelled) return;
-    const name = res.filename || res.strategy_file;
-    rtImportedStrategy = {
-      path: res.strategy_file,
-      name,
-      symbol: (res.symbol || "").trim() || rtParseSymbolFromFilename(name),
-    };
-    await loadRtStrategies();
-    rtApplySymbolFromStrategy(rtImportedStrategy.symbol);
-  } catch (e) {
-    await logClientError("导入策略失败: " + e.message);
-  }
+  // 通过文件浏览器选择策略文件，选中后导入到实时分析
+  await openFileBrowser("strategy", async (path, res) => {
+    try {
+      const name = (res && (res.filename || res.strategy_file)) || path;
+      rtImportedStrategy = {
+        path: (res && res.strategy_file) || path,
+        name,
+        symbol: ((res && res.symbol) || "").trim() || rtParseSymbolFromFilename(name),
+      };
+      await loadRtStrategies();
+      rtApplySymbolFromStrategy(rtImportedStrategy.symbol);
+    } catch (e) {
+      await logClientError("导入策略失败: " + e.message);
+    }
+  });
 }
 
 async function rtAddWatch() {
@@ -2544,6 +2733,36 @@ async function init() {
     $("rtGrid").addEventListener("click", (e) => {
       const btn = e.target.closest("[data-remove]");
       if (btn) rtRemoveWatch(btn.dataset.remove);
+    });
+  }
+
+  // 文件浏览器（无头环境：列表 + 上传 + 选择）
+  document.querySelectorAll("[data-close-file-browser]").forEach((el) => {
+    el.addEventListener("click", closeFileBrowser);
+  });
+  if ($("fbSelectBtn")) {
+    $("fbSelectBtn").addEventListener("click", confirmFileBrowserSelect);
+  }
+  if ($("fbUploadArea")) {
+    const ua = $("fbUploadArea");
+    const input = $("fbFileInput");
+    ua.addEventListener("click", () => input && input.click());
+    if (input) {
+      input.addEventListener("change", () => {
+        if (input.files && input.files[0]) uploadDataFile(input.files[0]);
+        input.value = "";
+      });
+    }
+    ua.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      ua.classList.add("drag");
+    });
+    ua.addEventListener("dragleave", () => ua.classList.remove("drag"));
+    ua.addEventListener("drop", (e) => {
+      e.preventDefault();
+      ua.classList.remove("drag");
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) uploadDataFile(file);
     });
   }
 

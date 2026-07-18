@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import traceback
@@ -20,7 +21,12 @@ if str(ROOT) not in sys.path:
 
 from data_pipeline.parquet_manager import inspect_parquet_file
 from model_core.config import ModelConfig
-from web.file_dialog import pick_parquet_file, pick_strategy_file
+from web.file_dialog import (
+    list_parquet_files,
+    list_strategy_files,
+    pick_parquet_file,
+    pick_strategy_file,
+)
 from web.progress import (
     get_symbol_progress,
     get_strategy_for_export,
@@ -53,6 +59,8 @@ from strategy_manager.live_signal import min_exposure
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 BACKTEST_OUTPUT_DIR = ROOT / "backtest_output"
+# Parquet K 线数据目录：优先用环境变量 KLINE_CACHE_DIR，否则项目根 data/
+DATA_DIR = Path(os.getenv("KLINE_CACHE_DIR", str(ROOT / "data")))
 
 setup_logging()
 logger = get_logger()
@@ -461,6 +469,71 @@ def api_browse_data_file() -> dict[str, Any]:
 @app.get("/api/strategy-file/browse")
 def api_browse_strategy_file() -> dict[str, Any]:
     return _browse_strategy_file()
+
+
+@app.get("/api/data-file/list")
+def api_list_data_files() -> dict[str, Any]:
+    """列出所有可训练 Parquet 文件（无头环境的文件浏览器用）。"""
+    return {"files": list_parquet_files()}
+
+
+@app.get("/api/data-file/inspect")
+def api_inspect_data_file(path: str = Query(..., description="Parquet 文件绝对路径")) -> dict[str, Any]:
+    """检查指定 Parquet 文件，返回品种/周期/K线数等信息（文件浏览器选中后调用）。"""
+    return _inspect_or_http(path)
+
+
+@app.get("/api/strategy-file/list")
+def api_list_strategy_files() -> dict[str, Any]:
+    """列出所有策略 JSON 文件（无头环境的文件浏览器用）。"""
+    return {"files": list_strategy_files()}
+
+
+@app.get("/api/strategy-file/inspect")
+def api_inspect_strategy_file(path: str = Query(..., description="策略 JSON 文件绝对路径")) -> dict[str, Any]:
+    """检查指定策略 JSON 文件（文件浏览器选中后调用）。"""
+    return _inspect_strategy_or_http(path)
+
+
+@app.post("/api/data-file/upload")
+async def api_upload_data_file(file: UploadFile = File(...)) -> dict[str, Any]:
+    """上传 Parquet K 线文件到数据目录，返回文件信息。
+
+    无头环境（容器）下，用户无法用 tkinter 选择本地文件，改用浏览器上传。
+    文件保存到 DATA_DIR，命名沿用上传文件名（仅取 basename，防路径穿越）。
+    """
+    # 安全处理文件名：仅保留 basename
+    raw_name = file.filename or "upload.parquet"
+    safe_name = Path(raw_name).name
+    if not safe_name.lower().endswith(".parquet"):
+        raise HTTPException(400, "仅支持 .parquet 文件")
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    dest = (DATA_DIR / safe_name).resolve()
+    # 确保 dest 仍在 DATA_DIR 内
+    if DATA_DIR.resolve() not in dest.parents and dest.parent != DATA_DIR.resolve():
+        raise HTTPException(400, "非法的目标路径")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "上传文件为空")
+
+    try:
+        dest.write_bytes(content)
+    except OSError as exc:
+        raise HTTPException(500, f"保存失败: {exc}") from exc
+
+    try:
+        info = inspect_parquet_file(dest)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        # 文件保存成功但无法解析（列缺失/数据不足等）— 保留文件并返回错误信息
+        raise HTTPException(400, str(e)) from e
+
+    if is_debug_mode():
+        logger.info("Uploaded data file: %s", dest)
+    return {"ok": True, **info}
 
 
 @app.post("/api/strategy-file/sync-best")

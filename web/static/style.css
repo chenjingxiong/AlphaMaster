@@ -1201,6 +1201,114 @@ td:nth-child(2) { color: var(--accent); font-family: var(--mono); }
   justify-content: flex-end;
 }
 
+/* ── 文件浏览器（无头环境） ── */
+.modal-card-file-browser {
+  width: min(580px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-body-file-browser {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+  max-height: 50vh;
+  padding: 0;
+  margin-bottom: 14px;
+}
+.fb-upload-area {
+  border: 2px dashed rgba(56, 189, 248, 0.32);
+  border-radius: 10px;
+  padding: 18px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-bottom: 10px;
+}
+.fb-upload-area:hover,
+.fb-upload-area.drag {
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(56, 189, 248, 0.06);
+}
+.fb-upload-hint {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.fb-upload-progress {
+  margin-bottom: 10px;
+}
+.fb-upload-bar {
+  height: 6px;
+  background: rgba(56, 189, 248, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.fb-upload-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+#fbUploadLabel {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.fb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fb-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.fb-item:hover {
+  background: rgba(56, 189, 248, 0.08);
+}
+.fb-item.selected {
+  background: rgba(56, 189, 248, 0.18);
+  outline: 1px solid rgba(56, 189, 248, 0.35);
+}
+.fb-item-main {
+  flex: 1;
+  min-width: 0;
+}
+.fb-item-name {
+  font-size: 0.92rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fb-item-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.fb-item-side {
+  text-align: right;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+.fb-item-size,
+.fb-item-date {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+.fb-empty {
+  text-align: center;
+  padding: 28px 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 /* ============================ 进入动画 ============================ */
 .panel { animation: panelIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .launch-panel { animation-delay: 0.05s; }
