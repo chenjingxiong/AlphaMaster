@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.6
 # AlphaMaster - 量化因子挖掘中心
 # 多阶段构建：builder 层编译/安装依赖，runtime 层只拷贝最小运行集，最小化镜像体积。
 #
